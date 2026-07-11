@@ -60,11 +60,11 @@ python -m streamlit run src/app.py
 训练 SMS 数据时，把上面四个 `--dataset enron` 改成 `--dataset sms`。
 
 ## 跑完会得到什么
-- `models/naive_bayes_model.joblib`, `models/svm_model.joblib` — 训练好的模型
-- `models/confusion_matrix_nb.png`, `models/confusion_matrix_svm.png` — 各自的混淆矩阵图
-- `models/comparison_table.csv` — 两个模型的 accuracy/precision/recall/F1 对比表 → **直接贴进 Documentation 的 Results 部分**
-- `models/comparison_chart.png` — 对比柱状图 → **同样贴进报告**
-- `streamlit run src/app.py` 打开的网页 → **demo 展示用**
+- `models/<dataset>/naive_bayes_model.joblib`, `models/<dataset>/svm_model.joblib` — 训练好的模型
+- `models/<dataset>/confusion_matrix_nb.png`, `models/<dataset>/confusion_matrix_svm.png` — 各自的混淆矩阵图
+- `models/<dataset>/comparison_table.csv` — 两个模型的 accuracy/precision/recall/F1 对比表 → **直接贴进 Documentation 的 Results 部分**
+- `models/<dataset>/comparison_chart.png` — 对比柱状图 → **同样贴进报告**
+- `python -m streamlit run src/app.py` 打开的网页 → **demo 展示用**
 
 ## 注意事项
 - `prepare_data.py` 里的 `RANDOM_STATE = 42` 千万别改,两人必须用同一个才能公平对比

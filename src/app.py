@@ -6,21 +6,13 @@ Usage:
     streamlit run src/app.py
 """
 
-import re
-import string
 from pathlib import Path
 import joblib
 import streamlit as st
 import pandas as pd
+from text_processing import clean_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-
-def clean_text(text):
-    text = re.sub(r"\w*\d\w*", " ", text)
-    text = re.sub(r"[%s]" % re.escape(string.punctuation), " ", text.lower())
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
 
 
 @st.cache_resource
@@ -30,6 +22,15 @@ def load_models(dataset):
     vectorizer = joblib.load(processed_dir / "vectorizer.joblib")
     nb_model = joblib.load(models_dir / "naive_bayes_model.joblib")
     svm_model = joblib.load(models_dir / "svm_model.joblib")
+
+    feature_count = len(vectorizer.vocabulary_)
+    for model_name, model in (("Naive Bayes", nb_model), ("SVM", svm_model)):
+        model_features = getattr(model, "n_features_in_", None)
+        if model_features != feature_count:
+            raise ValueError(
+                f"{model_name} expects {model_features} features, but the "
+                f"{dataset} vectorizer creates {feature_count}. Retrain the models."
+            )
     return vectorizer, nb_model, svm_model
 
 
@@ -48,19 +49,28 @@ except FileNotFoundError:
         f"training scripts with --dataset {dataset}."
     )
     st.stop()
+except (OSError, ValueError) as error:
+    st.error(f"Could not load compatible {dataset} model files: {error}")
+    st.stop()
 
 message = st.text_area("Enter a message to classify:", height=100,
                         placeholder="e.g. Congratulations! You've won a free prize, click here!")
 
-if st.button("Classify") and message.strip():
+if st.button("Classify"):
     cleaned = clean_text(message)
+    if not cleaned:
+        st.warning("Enter a message containing some words before classifying.")
+        st.stop()
+
     vec = vectorizer.transform([cleaned])
 
     nb_pred = nb_model.predict(vec)[0]
-    nb_conf = nb_model.predict_proba(vec).max()
+    nb_probabilities = nb_model.predict_proba(vec)[0]
+    nb_conf = nb_probabilities[list(nb_model.classes_).index(nb_pred)]
 
     svm_pred = svm_model.predict(vec)[0]
-    svm_conf = svm_model.predict_proba(vec).max()
+    svm_probabilities = svm_model.predict_proba(vec)[0]
+    svm_conf = svm_probabilities[list(svm_model.classes_).index(svm_pred)]
 
     col1, col2 = st.columns(2)
     with col1:
@@ -77,6 +87,9 @@ try:
     comparison_df = pd.read_csv(models_dir / "comparison_table.csv", index_col=0)
     st.subheader("Model Comparison (test set)")
     st.dataframe(comparison_df.round(4))
-    st.image(str(models_dir / "comparison_chart.png"))
 except FileNotFoundError:
     st.info("Run compare_models.py first to see the comparison table here.")
+
+comparison_chart = models_dir / "comparison_chart.png"
+if comparison_chart.is_file():
+    st.image(str(comparison_chart))

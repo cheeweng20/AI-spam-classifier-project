@@ -18,8 +18,18 @@ def main(dataset):
     project_root = Path(__file__).resolve().parents[1]
     models_dir = project_root / "models" / dataset
 
-    nb_metrics = joblib.load(models_dir / "naive_bayes_metrics.joblib")
-    svm_metrics = joblib.load(models_dir / "svm_metrics.joblib")
+    metric_paths = (
+        models_dir / "naive_bayes_metrics.joblib",
+        models_dir / "svm_metrics.joblib",
+    )
+    missing = [str(path.name) for path in metric_paths if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing model metrics in {models_dir}: {', '.join(missing)}. "
+            "Train both models for this dataset first."
+        )
+
+    nb_metrics, svm_metrics = (joblib.load(path) for path in metric_paths)
 
     df = pd.DataFrame([nb_metrics, svm_metrics]).set_index("model")
     print(f"=== Model Comparison ({dataset}) ===")
@@ -33,7 +43,9 @@ def main(dataset):
     ax.set_title(f"Naive Bayes vs SVM ({dataset})")
     ax.set_ylim(0, 1.05)
     plt.tight_layout()
-    plt.savefig(models_dir / "comparison_chart.png", dpi=150)
+    figure = ax.get_figure()
+    figure.savefig(models_dir / "comparison_chart.png", dpi=150)
+    plt.close(figure)
     print(f"Saved chart to {models_dir}/comparison_chart.png")
 
 

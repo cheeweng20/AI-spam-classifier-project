@@ -13,6 +13,7 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.naive_bayes import MultinomialNB
+from training_utils import load_training_data
 from sklearn.metrics import (
     confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, classification_report
 )
@@ -24,34 +25,38 @@ def main(dataset):
     models_dir = project_root / "models" / dataset
     models_dir.mkdir(parents=True, exist_ok=True)
 
-    X_train = joblib.load(processed_dir / "X_train_vec.joblib")
-    X_test = joblib.load(processed_dir / "X_test_vec.joblib")
-    y_train = joblib.load(processed_dir / "y_train.joblib")
-    y_test = joblib.load(processed_dir / "y_test.joblib")
+    X_train, X_test, y_train, y_test = load_training_data(processed_dir)
 
     model = MultinomialNB()
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
 
     acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred, pos_label="spam")
-    rec = recall_score(y_test, y_pred, pos_label="spam")
-    f1 = f1_score(y_test, y_pred, pos_label="spam")
+    prec = precision_score(y_test, y_pred, pos_label="spam", zero_division=0)
+    rec = recall_score(y_test, y_pred, pos_label="spam", zero_division=0)
+    f1 = f1_score(y_test, y_pred, pos_label="spam", zero_division=0)
 
     print(f"=== Naive Bayes Results ({dataset}) ===")
     print(f"Accuracy : {acc:.4f}")
     print(f"Precision: {prec:.4f}")
     print(f"Recall   : {rec:.4f}")
     print(f"F1-score : {f1:.4f}")
-    print("\n", classification_report(y_test, y_pred))
+    print("\n", classification_report(y_test, y_pred, zero_division=0))
 
     cm = confusion_matrix(y_test, y_pred, labels=["ham", "spam"])
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=["pred_ham", "pred_spam"],
-                yticklabels=["actual_ham", "actual_spam"])
-    plt.title(f"Naive Bayes - Confusion Matrix ({dataset})")
-    plt.savefig(models_dir / "confusion_matrix_nb.png", dpi=150, bbox_inches="tight")
-    plt.close()
+    figure, axis = plt.subplots()
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=["pred_ham", "pred_spam"],
+        yticklabels=["actual_ham", "actual_spam"],
+        ax=axis,
+    )
+    axis.set_title(f"Naive Bayes - Confusion Matrix ({dataset})")
+    figure.savefig(models_dir / "confusion_matrix_nb.png", dpi=150, bbox_inches="tight")
+    plt.close(figure)
 
     joblib.dump(model, models_dir / "naive_bayes_model.joblib")
     joblib.dump(

@@ -10,13 +10,14 @@ Usage:
 """
 
 import re
-import string
 import argparse
 from pathlib import Path
 import joblib
 import pandas as pd
+import sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
+from text_processing import clean_text
 
 RANDOM_STATE = 42
 TEST_SIZE = 0.3
@@ -30,14 +31,6 @@ DATASET_PATHS = {
     "sms": PROJECT_ROOT / "data" / "SMSSpamCollection",
     "enron": PROJECT_ROOT / "data" / "enron_spam_data.csv",
 }
-
-
-def clean_text(text):
-    """Remove numbers, punctuation, lowercase everything."""
-    text = re.sub(r"\w*\d\w*", " ", text)
-    text = re.sub(r"[%s]" % re.escape(string.punctuation), " ", text.lower())
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
 
 
 def load_sms_data(path):
@@ -55,8 +48,8 @@ def load_sms_data(path):
 def load_enron_data(path):
     """
     Enron-Spam CSV. Column names vary between Kaggle uploads, so we try to
-    auto-detect the text/label columns. If detection fails, print the real
-    column names and edit the candidate lists below to match.
+    auto-detect the text/label columns and report the available headers when
+    the format is unsupported.
     """
     try:
         data = pd.read_csv(path, encoding="utf-8-sig")
@@ -100,21 +93,53 @@ def load_enron_data(path):
         "1": "spam", "1.0": "spam", "true": "spam", "yes": "spam",
         "0": "ham", "0.0": "ham", "false": "ham", "no": "ham",
     })
-    data = pd.DataFrame({"label": labels, "text": text})
-    data = data.dropna(subset=["label"])
-    data = data[data["text"].str.len() > 0]
+    return pd.DataFrame({"label": labels, "text": text})
 
-    unknown_labels = sorted(set(data["label"]) - {"ham", "spam"})
+
+def validate_and_clean_data(data, dataset):
+    """Normalize labels/text and reject unusable or ambiguous training data."""
+    required_columns = {"label", "text"}
+    missing_columns = required_columns - set(data.columns)
+    if missing_columns:
+        raise ValueError(
+            f"The {dataset} dataset is missing columns: {sorted(missing_columns)}."
+        )
+
+    labels = data["label"].astype("string").str.lower().str.strip()
+    labels = labels.replace({
+        "1": "spam", "1.0": "spam", "true": "spam", "yes": "spam",
+        "0": "ham", "0.0": "ham", "false": "ham", "no": "ham",
+    })
+    cleaned = pd.DataFrame({
+        "label": labels,
+        "text": data["text"].fillna("").map(clean_text),
+    }).dropna(subset=["label"])
+    cleaned = cleaned[cleaned["text"].str.len() > 0]
+
+    unknown_labels = sorted(set(cleaned["label"]) - {"ham", "spam"})
     if unknown_labels:
         raise ValueError(
-            "Unsupported label values in the CSV: "
+            f"Unsupported label values in the {dataset} dataset: "
             f"{unknown_labels[:10]}. Expected ham/spam or 0/1."
         )
 
-    if data.empty:
-        raise ValueError("The CSV contains no usable messages after removing empty rows.")
+    conflicting = cleaned.groupby("text")["label"].nunique()
+    conflicting = conflicting[conflicting > 1]
+    if not conflicting.empty:
+        raise ValueError(
+            f"The {dataset} dataset contains {len(conflicting)} messages with "
+            "conflicting ham/spam labels."
+        )
 
-    return data
+    cleaned = cleaned.drop_duplicates(subset="text").reset_index(drop=True)
+    label_counts = cleaned["label"].value_counts()
+    if set(label_counts.index) != {"ham", "spam"} or label_counts.min() < 2:
+        raise ValueError(
+            f"The {dataset} dataset needs at least two usable ham and spam messages. "
+            f"Found: {label_counts.to_dict()}."
+        )
+
+    return cleaned
 
 
 LOADERS = {
@@ -126,26 +151,31 @@ LOADERS = {
 def main(dataset):
     raw_path = DATASET_PATHS[dataset]
     processed_dir = PROJECT_ROOT / "data" / "processed" / dataset
-    processed_dir.mkdir(parents=True, exist_ok=True)
 
     if not raw_path.is_file():
         raise FileNotFoundError(
             f"Training file not found: {raw_path}\n"
             f"Put the '{dataset}' training file at that location."
         )
+    processed_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading '{dataset}' data from {raw_path} ...")
-    data = LOADERS[dataset](raw_path)
-    print(f"Loaded {len(data)} messages.")
+    raw_data = LOADERS[dataset](raw_path)
+    data = validate_and_clean_data(raw_data, dataset)
+    removed_count = len(raw_data) - len(data)
+    print(f"Loaded {len(raw_data)} rows; using {len(data)} unique messages "
+          f"({removed_count} empty/duplicate rows removed).")
     print(data["label"].value_counts())
-
-    data["text"] = data["text"].map(clean_text)
 
     X = data["text"]
     y = data["label"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
+        X,
+        y,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE,
+        stratify=y,
     )
 
     vectorizer = CountVectorizer(stop_words="english")
@@ -160,6 +190,18 @@ def main(dataset):
     joblib.dump(y_train, processed_dir / "y_train.joblib")
     joblib.dump(y_test, processed_dir / "y_test.joblib")
     joblib.dump(vectorizer, processed_dir / "vectorizer.joblib")
+    joblib.dump(
+        {
+            "dataset": dataset,
+            "raw_rows": len(raw_data),
+            "usable_rows": len(data),
+            "features": X_train_vec.shape[1],
+            "random_state": RANDOM_STATE,
+            "test_size": TEST_SIZE,
+            "sklearn_version": sklearn.__version__,
+        },
+        processed_dir / "metadata.joblib",
+    )
 
     print(f"\nDone. Processed data saved to {processed_dir}/")
 
