@@ -8,7 +8,7 @@ Usage:
 """
 
 import argparse
-import os
+from pathlib import Path
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -19,14 +19,15 @@ from sklearn.metrics import (
 
 
 def main(dataset):
-    processed_dir = f"data/processed/{dataset}"
-    models_dir = f"models/{dataset}"
-    os.makedirs(models_dir, exist_ok=True)
+    project_root = Path(__file__).resolve().parents[1]
+    processed_dir = project_root / "data" / "processed" / dataset
+    models_dir = project_root / "models" / dataset
+    models_dir.mkdir(parents=True, exist_ok=True)
 
-    X_train = joblib.load(f"{processed_dir}/X_train_vec.joblib")
-    X_test = joblib.load(f"{processed_dir}/X_test_vec.joblib")
-    y_train = joblib.load(f"{processed_dir}/y_train.joblib")
-    y_test = joblib.load(f"{processed_dir}/y_test.joblib")
+    X_train = joblib.load(processed_dir / "X_train_vec.joblib")
+    X_test = joblib.load(processed_dir / "X_test_vec.joblib")
+    y_train = joblib.load(processed_dir / "y_train.joblib")
+    y_test = joblib.load(processed_dir / "y_test.joblib")
 
     model = SVC(kernel="linear", probability=True, random_state=42)
     model.fit(X_train, y_train)
@@ -49,13 +50,13 @@ def main(dataset):
                 xticklabels=["pred_ham", "pred_spam"],
                 yticklabels=["actual_ham", "actual_spam"])
     plt.title(f"SVM - Confusion Matrix ({dataset})")
-    plt.savefig(f"{models_dir}/confusion_matrix_svm.png", dpi=150, bbox_inches="tight")
+    plt.savefig(models_dir / "confusion_matrix_svm.png", dpi=150, bbox_inches="tight")
     plt.close()
 
-    joblib.dump(model, f"{models_dir}/svm_model.joblib")
+    joblib.dump(model, models_dir / "svm_model.joblib")
     joblib.dump(
         {"model": "SVM", "accuracy": acc, "precision": prec, "recall": rec, "f1": f1},
-        f"{models_dir}/svm_metrics.joblib"
+        models_dir / "svm_metrics.joblib"
     )
     print(f"\nSaved model + confusion matrix to {models_dir}/")
 
