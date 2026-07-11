@@ -23,26 +23,41 @@ spam-classifier-project/
 ## Step 2: 安装依赖
 在项目根目录打开终端:
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+```
+
+必须用同一个 Python 安装依赖和运行脚本。可以用下面的命令检查:
+```bash
+python -c "import sys; print(sys.executable)"
+python -m pip show joblib streamlit
+```
+
+如果 Windows PowerShell 找不到正确的 Python，而电脑已安装 Anaconda，请打开
+**Anaconda Prompt** 后运行上面的命令，或在 PowerShell 中使用完整路径:
+```powershell
+& "$HOME\anaconda3\python.exe" -m pip install -r requirements.txt
 ```
 
 ## Step 3: 跑流程(按顺序)
 ```bash
-# 1. 准备数据(只需跑一次，之后两人不用重跑，除非改了预处理逻辑)
-python src/prepare_data.py
+# 选择数据集: enron 会读取 data/enron_spam_data.csv；sms 会读取 SMSSpamCollection
+# 1. 准备 Enron CSV 数据
+python src/prepare_data.py --dataset enron
 
 # 2. 你训练 Naive Bayes
-python src/train_naive_bayes.py
+python src/train_naive_bayes.py --dataset enron
 
 # 3. 队友训练 SVM
-python src/train_svm.py
+python src/train_svm.py --dataset enron
 
 # 4. 汇总对比 (两人的模型都跑完之后再跑这个)
-python src/compare_models.py
+python src/compare_models.py --dataset enron
 
 # 5. 启动网页 Demo
-streamlit run src/app.py
+python -m streamlit run src/app.py
 ```
+
+训练 SMS 数据时，把上面四个 `--dataset enron` 改成 `--dataset sms`。
 
 ## 跑完会得到什么
 - `models/naive_bayes_model.joblib`, `models/svm_model.joblib` — 训练好的模型
