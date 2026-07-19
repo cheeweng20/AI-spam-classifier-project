@@ -1,22 +1,25 @@
-"""
-Step 5: Streamlit prototype UI.
-Run AFTER both models have been trained.
+"""Simple Flask interface for comparing the spam-classifier models.
 
-Usage:
-    streamlit run src/app.py
+Run from the project root with:
+    python src/app.py
 """
 
 from pathlib import Path
+
 import joblib
-import streamlit as st
 import pandas as pd
+from flask import Flask, render_template, request, send_file
+
 from text_processing import clean_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATASETS = ("sms", "enron")
+
+app = Flask(__name__)
 
 
-@st.cache_resource
 def load_models(dataset):
+    """Load the vectorizer and trained models for one dataset."""
     processed_dir = PROJECT_ROOT / "data" / "processed" / dataset
     models_dir = PROJECT_ROOT / "models" / dataset
     vectorizer = joblib.load(processed_dir / "vectorizer.joblib")
@@ -34,62 +37,76 @@ def load_models(dataset):
     return vectorizer, nb_model, svm_model
 
 
-st.set_page_config(page_title="Spam Classifier", page_icon="📩")
-st.title("📩 Email / SMS Spam Classifier")
-st.write("Compare Naive Bayes vs SVM predictions on the same message.")
+def prediction_result(model, vector):
+    """Return a display-ready prediction and confidence percentage."""
+    prediction = model.predict(vector)[0]
+    probabilities = model.predict_proba(vector)[0]
+    confidence = probabilities[list(model.classes_).index(prediction)]
+    return {"label": str(prediction).upper(), "confidence": f"{confidence:.1%}"}
 
-dataset = st.sidebar.selectbox("Dataset", ["sms", "enron"])
-models_dir = PROJECT_ROOT / "models" / dataset
 
-try:
-    vectorizer, nb_model, svm_model = load_models(dataset)
-except FileNotFoundError:
-    st.error(
-        f"The {dataset} model files are missing. Run prepare_data.py and both "
-        f"training scripts with --dataset {dataset}."
+def comparison_table(dataset):
+    """Return the saved test-set comparison table, if it exists."""
+    table_path = PROJECT_ROOT / "models" / dataset / "comparison_table.csv"
+    if not table_path.is_file():
+        return None
+    return pd.read_csv(table_path, index_col=0).round(4).to_html(
+        classes="comparison-table", border=0
     )
-    st.stop()
-except (OSError, ValueError) as error:
-    st.error(f"Could not load compatible {dataset} model files: {error}")
-    st.stop()
 
-message = st.text_area("Enter a message to classify:", height=100,
-                        placeholder="e.g. Congratulations! You've won a free prize, click here!")
 
-if st.button("Classify"):
-    cleaned = clean_text(message)
-    if not cleaned:
-        st.warning("Enter a message containing some words before classifying.")
-        st.stop()
+@app.route("/", methods=["GET", "POST"])
+def index():
+    dataset = request.form.get("dataset", "sms")
+    if dataset not in DATASETS:
+        dataset = "sms"
 
-    vec = vectorizer.transform([cleaned])
+    message = request.form.get("message", "")
+    results = None
+    error = None
 
-    nb_pred = nb_model.predict(vec)[0]
-    nb_probabilities = nb_model.predict_proba(vec)[0]
-    nb_conf = nb_probabilities[list(nb_model.classes_).index(nb_pred)]
+    try:
+        vectorizer, nb_model, svm_model = load_models(dataset)
+        if request.method == "POST":
+            cleaned_message = clean_text(message)
+            if not cleaned_message:
+                error = "Enter a message containing some words before classifying."
+            else:
+                vector = vectorizer.transform([cleaned_message])
+                results = {
+                    "naive_bayes": prediction_result(nb_model, vector),
+                    "svm": prediction_result(svm_model, vector),
+                }
+    except FileNotFoundError:
+        error = (
+            f"The {dataset} model files are missing. Run prepare_data.py and both "
+            f"training scripts with --dataset {dataset}."
+        )
+    except (OSError, ValueError, AttributeError) as exception:
+        error = f"Could not load compatible {dataset} model files: {exception}"
 
-    svm_pred = svm_model.predict(vec)[0]
-    svm_probabilities = svm_model.predict_proba(vec)[0]
-    svm_conf = svm_probabilities[list(svm_model.classes_).index(svm_pred)]
+    chart_path = PROJECT_ROOT / "models" / dataset / "comparison_chart.png"
+    return render_template(
+        "index.html",
+        dataset=dataset,
+        message=message,
+        results=results,
+        error=error,
+        comparison=comparison_table(dataset),
+        chart_available=chart_path.is_file(),
+    )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Naive Bayes")
-        st.metric("Prediction", nb_pred.upper(), f"{nb_conf:.1%} confidence")
-    with col2:
-        st.subheader("SVM")
-        st.metric("Prediction", svm_pred.upper(), f"{svm_conf:.1%} confidence")
 
-st.divider()
+@app.route("/comparison-chart/<dataset>")
+def comparison_chart(dataset):
+    """Serve the saved comparison chart for a valid dataset."""
+    if dataset not in DATASETS:
+        return "Not found", 404
+    chart_path = PROJECT_ROOT / "models" / dataset / "comparison_chart.png"
+    if not chart_path.is_file():
+        return "Not found", 404
+    return send_file(chart_path)
 
-# Show the comparison table/chart from compare_models.py if available
-try:
-    comparison_df = pd.read_csv(models_dir / "comparison_table.csv", index_col=0)
-    st.subheader("Model Comparison (test set)")
-    st.dataframe(comparison_df.round(4))
-except FileNotFoundError:
-    st.info("Run compare_models.py first to see the comparison table here.")
 
-comparison_chart = models_dir / "comparison_chart.png"
-if comparison_chart.is_file():
-    st.image(str(comparison_chart))
+if __name__ == "__main__":
+    app.run(debug=True)

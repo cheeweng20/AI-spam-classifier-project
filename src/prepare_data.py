@@ -28,20 +28,65 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # Where each dataset's raw file lives. Adjust the filename if yours differs.
 DATASET_PATHS = {
-    "sms": PROJECT_ROOT / "data" / "SMSSpamCollection",
+    "sms": PROJECT_ROOT / "data" / "messages.csv",
     "enron": PROJECT_ROOT / "data" / "enron_spam_data.csv",
 }
 
 
 def load_sms_data(path):
-    """UCI SMS Spam Collection: tab-separated, no header, 2 columns (label, text)."""
-    data = pd.read_csv(
-        path,
-        sep="\t",
-        header=None,
-        names=["label", "text"],
-        encoding="windows-1252",
+    """
+    SMS dataset in CSV form. Expected columns are message,label, but we also
+    support common alternatives and the original tab-separated UCI file.
+    """
+    try:
+        data = pd.read_csv(path, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        data = pd.read_csv(path, encoding="windows-1252")
+
+    normalized_columns = {
+        re.sub(r"[^a-z0-9]", "", str(column).lower()): column
+        for column in data.columns
+    }
+    text_col_candidates = ["message", "text", "sms", "body", "content", "v2"]
+    label_col_candidates = ["label", "category", "spamham", "spam", "class", "target", "v1"]
+
+    text_col = next(
+        (normalized_columns[c] for c in text_col_candidates if c in normalized_columns),
+        None,
     )
+    label_col = next(
+        (normalized_columns[c] for c in label_col_candidates if c in normalized_columns),
+        None,
+    )
+
+    if text_col is not None and label_col is not None:
+        return pd.DataFrame({
+            "label": data[label_col],
+            "text": data[text_col],
+        })
+
+    try:
+        data = pd.read_csv(
+            path,
+            sep="\t",
+            header=None,
+            names=["label", "text"],
+            encoding="windows-1252",
+        )
+    except UnicodeDecodeError:
+        data = pd.read_csv(
+            path,
+            sep="\t",
+            header=None,
+            names=["label", "text"],
+            encoding="utf-8-sig",
+        )
+
+    if data.shape[1] != 2:
+        raise ValueError(
+            f"Could not auto-detect SMS columns.\nActual columns in your file: {list(data.columns)}\n"
+            "Expected CSV columns like message,label or the original tab-separated label/text format."
+        )
     return data
 
 
@@ -110,9 +155,21 @@ def validate_and_clean_data(data, dataset):
         "1": "spam", "1.0": "spam", "true": "spam", "yes": "spam",
         "0": "ham", "0.0": "ham", "false": "ham", "no": "ham",
     })
+    raw_text = data["text"].fillna("").astype("string").str.strip()
+    spreadsheet_errors = {
+        "#div/0!",
+        "#error!",
+        "#n/a",
+        "#name?",
+        "#null!",
+        "#num!",
+        "#ref!",
+        "#value!",
+    }
+    usable_text = ~raw_text.str.lower().isin(spreadsheet_errors)
     cleaned = pd.DataFrame({
-        "label": labels,
-        "text": data["text"].fillna("").map(clean_text),
+        "label": labels[usable_text],
+        "text": raw_text[usable_text].map(clean_text),
     }).dropna(subset=["label"])
     cleaned = cleaned[cleaned["text"].str.len() > 0]
 

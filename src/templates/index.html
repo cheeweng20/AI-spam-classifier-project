@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spam Classifier</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>Email / SMS Spam Classifier</h1>
+      <p>Compare Naive Bayes and SVM predictions for the same message.</p>
+    </header>
+
+    <section class="card">
+      <form method="post">
+        <label for="dataset">Dataset</label>
+        <select id="dataset" name="dataset">
+          <option value="sms" {% if dataset == 'sms' %}selected{% endif %}>SMS</option>
+          <option value="enron" {% if dataset == 'enron' %}selected{% endif %}>Enron Email</option>
+        </select>
+
+        <label for="message">Message to classify</label>
+        <textarea id="message" name="message" rows="6" placeholder="e.g. Congratulations! You've won a free prize, click here!">{{ message }}</textarea>
+        <button type="submit">Classify message</button>
+      </form>
+    </section>
+
+    {% if error %}
+      <p class="alert" role="alert">{{ error }}</p>
+    {% endif %}
+
+    {% if results %}
+      <section class="results" aria-label="Classification results">
+        <article class="result-card">
+          <h2>Naive Bayes</h2>
+          <p class="prediction {{ results.naive_bayes.label|lower }}">{{ results.naive_bayes.label }}</p>
+          <p>{{ results.naive_bayes.confidence }} confidence</p>
+        </article>
+        <article class="result-card">
+          <h2>SVM</h2>
+          <p class="prediction {{ results.svm.label|lower }}">{{ results.svm.label }}</p>
+          <p>{{ results.svm.confidence }} confidence</p>
+        </article>
+      </section>
+    {% endif %}
+
+    {% if comparison %}
+      <section class="card">
+        <h2>Model comparison (test set)</h2>
+        <div class="table-wrap">{{ comparison|safe }}</div>
+        {% if chart_available %}
+          <img class="chart" src="{{ url_for('comparison_chart', dataset=dataset) }}" alt="Model comparison chart">
+        {% endif %}
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>
