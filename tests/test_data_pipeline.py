@@ -11,6 +11,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from prepare_data import validate_and_clean_data  # noqa: E402
 from text_processing import clean_text  # noqa: E402
+from training_utils import calculate_metrics  # noqa: E402
 
 
 class TextProcessingTests(unittest.TestCase):
@@ -44,6 +45,19 @@ class TextProcessingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "conflicting"):
             validate_and_clean_data(data, "test")
+
+
+class EvaluationTests(unittest.TestCase):
+    def test_metrics_use_spam_as_the_positive_class(self):
+        metrics = calculate_metrics(
+            ["ham", "ham", "spam", "spam"],
+            ["ham", "spam", "spam", "spam"],
+        )
+
+        self.assertEqual(metrics["accuracy"], 0.75)
+        self.assertEqual(metrics["precision"], 2 / 3)
+        self.assertEqual(metrics["recall"], 1.0)
+        self.assertEqual(metrics["f1"], 0.8)
 
 
 if __name__ == "__main__":

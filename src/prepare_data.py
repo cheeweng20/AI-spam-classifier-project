@@ -1,20 +1,17 @@
 """
 Step 1: Prepare the dataset.
-Supports multiple raw dataset formats (SMS Spam Collection, Enron-Spam CSV).
-Run once per dataset. Cleans, splits, vectorizes, and saves to
-data/processed/<dataset>/ so both teammates train on identical data.
+Loads data/messages.csv, cleans it, creates a shared train/test split,
+vectorizes the messages, and saves the results to data/processed/ so both
+classifiers train on identical data.
 
 Usage:
-    python src/prepare_data.py --dataset sms
-    python src/prepare_data.py --dataset enron
+    python src/prepare_data.py
 """
 
 import re
-import argparse
 from pathlib import Path
 import joblib
 import pandas as pd
-import sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from text_processing import clean_text
@@ -26,17 +23,15 @@ TEST_SIZE = 0.3
 # command happens to be run in.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Where each dataset's raw file lives. Adjust the filename if yours differs.
-DATASET_PATHS = {
-    "sms": PROJECT_ROOT / "data" / "messages.csv",
-    "enron": PROJECT_ROOT / "data" / "enron_spam_data.csv",
-}
+DATA_PATH = PROJECT_ROOT / "data" / "messages.csv"
 
 
-def load_sms_data(path):
+def load_message_data(path):
     """
-    SMS dataset in CSV form. Expected columns are message,label, but we also
-    support common alternatives and the original tab-separated UCI file.
+    Load the message dataset from CSV.
+
+    The expected columns are message and label, but common alternative column
+    names are supported to make format errors easier to diagnose.
     """
     try:
         data = pd.read_csv(path, encoding="utf-8-sig")
@@ -47,7 +42,7 @@ def load_sms_data(path):
         re.sub(r"[^a-z0-9]", "", str(column).lower()): column
         for column in data.columns
     }
-    text_col_candidates = ["message", "text", "sms", "body", "content", "v2"]
+    text_col_candidates = ["message", "text", "body", "content"]
     label_col_candidates = ["label", "category", "spamham", "spam", "class", "target", "v1"]
 
     text_col = next(
@@ -65,80 +60,11 @@ def load_sms_data(path):
             "text": data[text_col],
         })
 
-    try:
-        data = pd.read_csv(
-            path,
-            sep="\t",
-            header=None,
-            names=["label", "text"],
-            encoding="windows-1252",
-        )
-    except UnicodeDecodeError:
-        data = pd.read_csv(
-            path,
-            sep="\t",
-            header=None,
-            names=["label", "text"],
-            encoding="utf-8-sig",
-        )
-
-    if data.shape[1] != 2:
-        raise ValueError(
-            f"Could not auto-detect SMS columns.\nActual columns in your file: {list(data.columns)}\n"
-            "Expected CSV columns like message,label or the original tab-separated label/text format."
-        )
-    return data
-
-
-def load_enron_data(path):
-    """
-    Enron-Spam CSV. Column names vary between Kaggle uploads, so we try to
-    auto-detect the text/label columns and report the available headers when
-    the format is unsupported.
-    """
-    try:
-        data = pd.read_csv(path, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        # Some Enron exports use the Windows Western encoding.
-        data = pd.read_csv(path, encoding="windows-1252")
-
-    # Match headers without being sensitive to spaces, punctuation, or case.
-    normalized_columns = {
-        re.sub(r"[^a-z0-9]", "", str(column).lower()): column
-        for column in data.columns
-    }
-    text_col_candidates = ["text", "message", "body", "content", "email"]
-    label_col_candidates = ["label", "category", "spamham", "spam", "class", "target"]
-
-    text_col = next(
-        (normalized_columns[c] for c in text_col_candidates if c in normalized_columns),
-        None,
+    raise ValueError(
+        f"Could not auto-detect message and label columns.\n"
+        f"Actual columns in your file: {list(data.columns)}\n"
+        "Expected CSV columns such as message,label."
     )
-    label_col = next(
-        (normalized_columns[c] for c in label_col_candidates if c in normalized_columns),
-        None,
-    )
-
-    if text_col is None or label_col is None:
-        raise ValueError(
-            f"Could not auto-detect columns.\nActual columns in your file: {list(data.columns)}\n"
-            "Expected a text/message/body column and a label/category/spam-ham column."
-        )
-
-    # The included Enron file has both Subject and Message. Keep a subject-only
-    # email instead of dropping it, and include the subject when a body exists.
-    text = data[text_col].fillna("").astype(str).str.strip()
-    subject_col = normalized_columns.get("subject")
-    if subject_col is not None and subject_col != text_col:
-        subject = data[subject_col].fillna("").astype(str).str.strip()
-        text = (subject + " " + text).str.strip()
-
-    labels = data[label_col].astype("string").str.lower().str.strip()
-    labels = labels.replace({
-        "1": "spam", "1.0": "spam", "true": "spam", "yes": "spam",
-        "0": "ham", "0.0": "ham", "false": "ham", "no": "ham",
-    })
-    return pd.DataFrame({"label": labels, "text": text})
 
 
 def validate_and_clean_data(data, dataset):
@@ -199,26 +125,19 @@ def validate_and_clean_data(data, dataset):
     return cleaned
 
 
-LOADERS = {
-    "sms": load_sms_data,
-    "enron": load_enron_data,
-}
+def main():
+    processed_dir = PROJECT_ROOT / "data" / "processed"
 
-
-def main(dataset):
-    raw_path = DATASET_PATHS[dataset]
-    processed_dir = PROJECT_ROOT / "data" / "processed" / dataset
-
-    if not raw_path.is_file():
+    if not DATA_PATH.is_file():
         raise FileNotFoundError(
-            f"Training file not found: {raw_path}\n"
-            f"Put the '{dataset}' training file at that location."
+            f"Training file not found: {DATA_PATH}\n"
+            "Put messages.csv in the data directory."
         )
     processed_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading '{dataset}' data from {raw_path} ...")
-    raw_data = LOADERS[dataset](raw_path)
-    data = validate_and_clean_data(raw_data, dataset)
+    print(f"Loading message data from {DATA_PATH} ...")
+    raw_data = load_message_data(DATA_PATH)
+    data = validate_and_clean_data(raw_data, "message")
     removed_count = len(raw_data) - len(data)
     print(f"Loaded {len(raw_data)} rows; using {len(data)} unique messages "
           f"({removed_count} empty/duplicate rows removed).")
@@ -247,24 +166,8 @@ def main(dataset):
     joblib.dump(y_train, processed_dir / "y_train.joblib")
     joblib.dump(y_test, processed_dir / "y_test.joblib")
     joblib.dump(vectorizer, processed_dir / "vectorizer.joblib")
-    joblib.dump(
-        {
-            "dataset": dataset,
-            "raw_rows": len(raw_data),
-            "usable_rows": len(data),
-            "features": X_train_vec.shape[1],
-            "random_state": RANDOM_STATE,
-            "test_size": TEST_SIZE,
-            "sklearn_version": sklearn.__version__,
-        },
-        processed_dir / "metadata.joblib",
-    )
-
     print(f"\nDone. Processed data saved to {processed_dir}/")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", choices=["sms", "enron"], default="sms")
-    args = parser.parse_args()
-    main(args.dataset)
+    main()

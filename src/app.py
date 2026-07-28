@@ -13,15 +13,14 @@ from flask import Flask, render_template, request, send_file
 from text_processing import clean_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATASETS = ("sms", "enron")
 
 app = Flask(__name__)
 
 
-def load_models(dataset):
-    """Load the vectorizer and trained models for one dataset."""
-    processed_dir = PROJECT_ROOT / "data" / "processed" / dataset
-    models_dir = PROJECT_ROOT / "models" / dataset
+def load_models():
+    """Load the vectorizer and both trained classification models."""
+    processed_dir = PROJECT_ROOT / "data" / "processed"
+    models_dir = PROJECT_ROOT / "models"
     vectorizer = joblib.load(processed_dir / "vectorizer.joblib")
     nb_model = joblib.load(models_dir / "naive_bayes_model.joblib")
     svm_model = joblib.load(models_dir / "svm_model.joblib")
@@ -32,22 +31,19 @@ def load_models(dataset):
         if model_features != feature_count:
             raise ValueError(
                 f"{model_name} expects {model_features} features, but the "
-                f"{dataset} vectorizer creates {feature_count}. Retrain the models."
+                f"vectorizer creates {feature_count}. Retrain the models."
             )
     return vectorizer, nb_model, svm_model
 
 
 def prediction_result(model, vector):
-    """Return a display-ready prediction and confidence percentage."""
-    prediction = model.predict(vector)[0]
-    probabilities = model.predict_proba(vector)[0]
-    confidence = probabilities[list(model.classes_).index(prediction)]
-    return {"label": str(prediction).upper(), "confidence": f"{confidence:.1%}"}
+    """Return a display-ready prediction."""
+    return str(model.predict(vector)[0]).upper()
 
 
-def comparison_table(dataset):
+def comparison_table():
     """Return the saved test-set comparison table, if it exists."""
-    table_path = PROJECT_ROOT / "models" / dataset / "comparison_table.csv"
+    table_path = PROJECT_ROOT / "models" / "comparison_table.csv"
     if not table_path.is_file():
         return None
     return pd.read_csv(table_path, index_col=0).round(4).to_html(
@@ -57,16 +53,12 @@ def comparison_table(dataset):
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    dataset = request.form.get("dataset", "sms")
-    if dataset not in DATASETS:
-        dataset = "sms"
-
     message = request.form.get("message", "")
     results = None
     error = None
 
     try:
-        vectorizer, nb_model, svm_model = load_models(dataset)
+        vectorizer, nb_model, svm_model = load_models()
         if request.method == "POST":
             cleaned_message = clean_text(message)
             if not cleaned_message:
@@ -79,30 +71,27 @@ def index():
                 }
     except FileNotFoundError:
         error = (
-            f"The {dataset} model files are missing. Run prepare_data.py and both "
-            f"training scripts with --dataset {dataset}."
+            "The model files are missing. Run prepare_data.py and both "
+            "training scripts."
         )
     except (OSError, ValueError, AttributeError) as exception:
-        error = f"Could not load compatible {dataset} model files: {exception}"
+        error = f"Could not load compatible model files: {exception}"
 
-    chart_path = PROJECT_ROOT / "models" / dataset / "comparison_chart.png"
+    chart_path = PROJECT_ROOT / "models" / "comparison_chart.png"
     return render_template(
         "index.html",
-        dataset=dataset,
         message=message,
         results=results,
         error=error,
-        comparison=comparison_table(dataset),
+        comparison=comparison_table(),
         chart_available=chart_path.is_file(),
     )
 
 
-@app.route("/comparison-chart/<dataset>")
-def comparison_chart(dataset):
-    """Serve the saved comparison chart for a valid dataset."""
-    if dataset not in DATASETS:
-        return "Not found", 404
-    chart_path = PROJECT_ROOT / "models" / dataset / "comparison_chart.png"
+@app.route("/comparison-chart")
+def comparison_chart():
+    """Serve the saved comparison chart."""
+    chart_path = PROJECT_ROOT / "models" / "comparison_chart.png"
     if not chart_path.is_file():
         return "Not found", 404
     return send_file(chart_path)
