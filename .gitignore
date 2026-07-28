@@ -203,6 +203,11 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Generated machine-learning artifacts
+# Each teammate generates these locally to avoid binary/result conflicts.
+data/processed/
+models/
+
 # Ruff stuff:
 .ruff_cache/
 

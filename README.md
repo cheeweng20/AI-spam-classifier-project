@@ -90,6 +90,10 @@ The comparison step creates:
 The CSV table and figures can be included in the Results and Discussion
 sections of the assignment documentation.
 
+The `data/processed/` and `models/` directories are generated locally and are
+ignored by Git to prevent model and result-file conflicts between teammates.
+After cloning the repository, run the complete workflow above to create them.
+
 ## Run the Tests
 
 ```bash
