@@ -35,8 +35,18 @@ def comparison_table():
     table_path = PROJECT_ROOT / "models" / "comparison_table.csv"
     if not table_path.is_file():
         return None
-    return pd.read_csv(table_path, index_col=0).round(4).to_html(
-        classes="comparison-table", border=0
+    table = pd.read_csv(table_path).rename(columns={
+        "model": "Model",
+        "accuracy": "Accuracy",
+        "precision": "Precision",
+        "recall": "Recall",
+        "f1": "F1",
+        "cv_f1": "CV F1",
+    })
+    return table.round(4).to_html(
+        classes="comparison-table",
+        border=0,
+        index=False,
     )
 
 
