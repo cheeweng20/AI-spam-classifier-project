@@ -6,9 +6,9 @@ classification algorithms:
 - Multinomial Naive Bayes
 - Linear Support Vector Machine (SVM)
 
-Both models are trained and evaluated using the same cleaned data, feature
-representation, training set, and test set so their results can be compared
-fairly.
+Both models are trained and evaluated using the same cleaned training and test
+sets. Each model uses a leakage-safe TF-IDF pipeline and reproducible five-fold
+cross-validation to select its best configuration.
 
 ## Project Structure
 
@@ -67,8 +67,20 @@ http://127.0.0.1:5000
 3. Removes empty, invalid, conflicting, and duplicate messages.
 4. Cleans punctuation, numbers, and repeated whitespace.
 5. Creates a stratified 70/30 training and test split using random state 42.
-6. Fits a CountVectorizer on the training messages only.
-7. Saves the shared training artifacts to `data/processed/`.
+6. Saves the shared text and label splits to `data/processed/`.
+
+## Feature Extraction and Model Selection
+
+Both training scripts place TF-IDF feature extraction inside a scikit-learn
+Pipeline. GridSearchCV compares unigram features with unigram + bigram features
+using five-fold stratified cross-validation. Because TF-IDF is fitted separately
+inside every fold, the validation fold cannot influence its vocabulary or IDF
+weights.
+
+Naive Bayes also searches smoothing strength and whether to learn class priors.
+SVM uses LinearSVC and searches the regularization value and balanced/unbalanced
+class weights. The best configuration is selected by spam-class F1-score, then
+evaluated once on the untouched 30% test set.
 
 ## Model Evaluation
 
@@ -86,6 +98,10 @@ The comparison step creates:
 - `models/comparison_chart.png`
 - `models/confusion_matrix_nb.png`
 - `models/confusion_matrix_svm.png`
+- `models/naive_bayes_grid_search.csv`
+- `models/svm_grid_search.csv`
+- `models/naive_bayes_training_summary.json`
+- `models/svm_training_summary.json`
 
 The CSV table and figures can be included in the Results and Discussion
 sections of the assignment documentation.

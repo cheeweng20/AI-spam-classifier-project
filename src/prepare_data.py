@@ -1,8 +1,9 @@
 """
 Step 1: Prepare the dataset.
-Loads data/messages.csv, cleans it, creates a shared train/test split,
-vectorizes the messages, and saves the results to data/processed/ so both
-classifiers train on identical data.
+Loads data/messages.csv, cleans it, creates a shared train/test split, and
+saves the text and labels to data/processed/ so both classifiers use the same
+data. Feature extraction is fitted inside cross-validation in the training
+scripts to prevent validation-data leakage.
 
 Usage:
     python src/prepare_data.py
@@ -13,7 +14,6 @@ from pathlib import Path
 import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import CountVectorizer
 from text_processing import clean_text
 
 RANDOM_STATE = 42
@@ -154,18 +154,13 @@ def main():
         stratify=y,
     )
 
-    vectorizer = CountVectorizer(stop_words="english")
-    X_train_vec = vectorizer.fit_transform(X_train)
-    X_test_vec = vectorizer.transform(X_test)
+    print(f"Training set: {len(X_train)} messages")
+    print(f"Test set: {len(X_test)} messages")
 
-    print(f"Training set: {X_train_vec.shape[0]} messages, {X_train_vec.shape[1]} features")
-    print(f"Test set: {X_test_vec.shape[0]} messages")
-
-    joblib.dump(X_train_vec, processed_dir / "X_train_vec.joblib")
-    joblib.dump(X_test_vec, processed_dir / "X_test_vec.joblib")
+    joblib.dump(X_train, processed_dir / "X_train.joblib")
+    joblib.dump(X_test, processed_dir / "X_test.joblib")
     joblib.dump(y_train, processed_dir / "y_train.joblib")
     joblib.dump(y_test, processed_dir / "y_test.joblib")
-    joblib.dump(vectorizer, processed_dir / "vectorizer.joblib")
     print(f"\nDone. Processed data saved to {processed_dir}/")
 
 

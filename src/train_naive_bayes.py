@@ -8,12 +8,16 @@ Usage:
 
 from pathlib import Path
 import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
 from training_utils import (
     calculate_metrics,
+    create_grid_search,
     load_training_data,
     print_results,
     save_confusion_matrix,
+    save_grid_search_results,
 )
 
 
@@ -25,8 +29,33 @@ def main():
 
     X_train, X_test, y_train, y_test = load_training_data(processed_dir)
 
-    model = MultinomialNB()
-    model.fit(X_train, y_train)
+    pipeline = Pipeline([
+        (
+            "tfidf",
+            TfidfVectorizer(
+                stop_words="english",
+                min_df=2,
+                max_df=0.98,
+                sublinear_tf=True,
+            ),
+        ),
+        ("classifier", MultinomialNB()),
+    ])
+    parameter_grid = {
+        "tfidf__ngram_range": [(1, 1), (1, 2)],
+        "classifier__alpha": [0.1, 0.5, 1.0],
+        "classifier__fit_prior": [True, False],
+    }
+    search = create_grid_search(pipeline, parameter_grid)
+    search.fit(X_train, y_train)
+    model = search.best_estimator_
+    save_grid_search_results(
+        search,
+        "Naive Bayes",
+        "naive_bayes",
+        models_dir,
+    )
+
     y_pred = model.predict(X_test)
     metrics = calculate_metrics(y_test, y_pred)
     print_results("Naive Bayes", y_test, y_pred, metrics)
@@ -39,7 +68,7 @@ def main():
     )
 
     joblib.dump(model, models_dir / "naive_bayes_model.joblib")
-    print(f"\nSaved model + confusion matrix to {models_dir}/")
+    print(f"\nSaved model, grid-search results, and confusion matrix to {models_dir}/")
 
 
 if __name__ == "__main__":

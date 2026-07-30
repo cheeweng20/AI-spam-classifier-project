@@ -6,6 +6,7 @@ Usage:
     python src/compare_models.py
 """
 
+import json
 from pathlib import Path
 import joblib
 import pandas as pd
@@ -22,7 +23,12 @@ def main():
         "Naive Bayes": models_dir / "naive_bayes_model.joblib",
         "SVM": models_dir / "svm_model.joblib",
     }
-    missing = [path.name for path in model_paths.values() if not path.is_file()]
+    summary_paths = {
+        "Naive Bayes": models_dir / "naive_bayes_training_summary.json",
+        "SVM": models_dir / "svm_training_summary.json",
+    }
+    required_paths = [*model_paths.values(), *summary_paths.values()]
+    missing = [path.name for path in required_paths if not path.is_file()]
     if missing:
         raise FileNotFoundError(
             f"Missing trained models in {models_dir}: {', '.join(missing)}. "
@@ -34,7 +40,13 @@ def main():
     for model_name, model_path in model_paths.items():
         model = joblib.load(model_path)
         metrics = calculate_metrics(y_test, model.predict(X_test))
-        results.append({"model": model_name, **metrics})
+        with summary_paths[model_name].open(encoding="utf-8") as file:
+            training_summary = json.load(file)
+        results.append({
+            "model": model_name,
+            **metrics,
+            "cv_f1": training_summary["best_cv_f1"],
+        })
 
     df = pd.DataFrame(results).set_index("model")
     print("=== Model Comparison ===")
@@ -43,7 +55,8 @@ def main():
     df.to_csv(models_dir / "comparison_table.csv")
     print(f"\nSaved table to {models_dir}/comparison_table.csv")
 
-    ax = df.plot(kind="bar", figsize=(8, 5), rot=0)
+    test_metrics = df[["accuracy", "precision", "recall", "f1"]]
+    ax = test_metrics.plot(kind="bar", figsize=(8, 5), rot=0)
     ax.set_ylabel("Score")
     ax.set_title("Naive Bayes vs SVM")
     ax.set_ylim(0, 1.05)

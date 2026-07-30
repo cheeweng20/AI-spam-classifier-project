@@ -8,12 +8,16 @@ Usage:
 
 from pathlib import Path
 import joblib
-from sklearn.svm import SVC
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.pipeline import Pipeline
+from sklearn.svm import LinearSVC
 from training_utils import (
     calculate_metrics,
+    create_grid_search,
     load_training_data,
     print_results,
     save_confusion_matrix,
+    save_grid_search_results,
 )
 
 
@@ -25,8 +29,33 @@ def main():
 
     X_train, X_test, y_train, y_test = load_training_data(processed_dir)
 
-    model = SVC(kernel="linear", random_state=42)
-    model.fit(X_train, y_train)
+    pipeline = Pipeline([
+        (
+            "tfidf",
+            TfidfVectorizer(
+                stop_words="english",
+                min_df=2,
+                max_df=0.98,
+                sublinear_tf=True,
+            ),
+        ),
+        ("classifier", LinearSVC(random_state=42, max_iter=5000)),
+    ])
+    parameter_grid = {
+        "tfidf__ngram_range": [(1, 1), (1, 2)],
+        "classifier__C": [0.5, 1.0, 2.0],
+        "classifier__class_weight": [None, "balanced"],
+    }
+    search = create_grid_search(pipeline, parameter_grid)
+    search.fit(X_train, y_train)
+    model = search.best_estimator_
+    save_grid_search_results(
+        search,
+        "SVM",
+        "svm",
+        models_dir,
+    )
+
     y_pred = model.predict(X_test)
     metrics = calculate_metrics(y_test, y_pred)
     print_results("SVM", y_test, y_pred, metrics)
@@ -39,7 +68,7 @@ def main():
     )
 
     joblib.dump(model, models_dir / "svm_model.joblib")
-    print(f"\nSaved model + confusion matrix to {models_dir}/")
+    print(f"\nSaved model, grid-search results, and confusion matrix to {models_dir}/")
 
 
 if __name__ == "__main__":

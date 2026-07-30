@@ -18,27 +18,16 @@ app = Flask(__name__)
 
 
 def load_models():
-    """Load the vectorizer and both trained classification models."""
-    processed_dir = PROJECT_ROOT / "data" / "processed"
+    """Load both fitted text-classification pipelines."""
     models_dir = PROJECT_ROOT / "models"
-    vectorizer = joblib.load(processed_dir / "vectorizer.joblib")
     nb_model = joblib.load(models_dir / "naive_bayes_model.joblib")
     svm_model = joblib.load(models_dir / "svm_model.joblib")
-
-    feature_count = len(vectorizer.vocabulary_)
-    for model_name, model in (("Naive Bayes", nb_model), ("SVM", svm_model)):
-        model_features = getattr(model, "n_features_in_", None)
-        if model_features != feature_count:
-            raise ValueError(
-                f"{model_name} expects {model_features} features, but the "
-                f"vectorizer creates {feature_count}. Retrain the models."
-            )
-    return vectorizer, nb_model, svm_model
+    return nb_model, svm_model
 
 
-def prediction_result(model, vector):
+def prediction_result(model, message):
     """Return a display-ready prediction."""
-    return str(model.predict(vector)[0]).upper()
+    return str(model.predict([message])[0]).upper()
 
 
 def comparison_table():
@@ -58,16 +47,15 @@ def index():
     error = None
 
     try:
-        vectorizer, nb_model, svm_model = load_models()
+        nb_model, svm_model = load_models()
         if request.method == "POST":
             cleaned_message = clean_text(message)
             if not cleaned_message:
                 error = "Enter a message containing some words before classifying."
             else:
-                vector = vectorizer.transform([cleaned_message])
                 results = {
-                    "naive_bayes": prediction_result(nb_model, vector),
-                    "svm": prediction_result(svm_model, vector),
+                    "naive_bayes": prediction_result(nb_model, cleaned_message),
+                    "svm": prediction_result(svm_model, cleaned_message),
                 }
     except FileNotFoundError:
         error = (
