@@ -19,13 +19,14 @@ AI-spam-classifier-project/
 |   |-- messages.csv
 |   `-- processed/
 |-- models/
+|-- streamlit_app.py
 |-- src/
 |   |-- prepare_data.py
 |   |-- train_naive_bayes.py
 |   |-- train_svm.py
 |   |-- compare_models.py
 |   |-- settings.py
-|   `-- app.py
+|   `-- text_processing.py
 |-- tests/
 `-- requirements.txt
 ```
@@ -51,14 +52,13 @@ python src/prepare_data.py
 python src/train_naive_bayes.py
 python src/train_svm.py
 python src/compare_models.py
-python src/app.py
+python -m streamlit run streamlit_app.py
 ```
 
-The web application will be available at:
-
-```text
-http://127.0.0.1:5000
-```
+The Streamlit interface provides two-model prediction, model-agreement status,
+the saved comparison table, and the comparison chart. To deploy it with
+Streamlit Community Cloud, push the repository and the four allowed model
+artifacts to GitHub, then select `streamlit_app.py` as the app entry point.
 
 The interface validates empty and oversized input, loads the two trusted model
 artifacts once per application process, reports whether the models agree, and
@@ -114,9 +114,10 @@ The comparison step creates:
 The CSV table and figures can be included in the Results and Discussion
 sections of the assignment documentation.
 
-The `data/processed/` and `models/` directories are generated locally and are
-ignored by Git to prevent model and result-file conflicts between teammates.
-After cloning the repository, run the complete workflow above to create them.
+The `data/processed/` directory and intermediate files in `models/` are ignored
+by Git. The two trained pipelines, comparison table, and comparison chart are
+allowed through `.gitignore` because the deployed web interface requires them.
+After retraining, commit those four deployment artifacts with the application.
 
 ## Run the Tests
 

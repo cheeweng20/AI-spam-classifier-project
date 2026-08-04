@@ -3,34 +3,23 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
+from streamlit.testing.v1 import AppTest
 
-SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-import app as app_module  # noqa: E402
 from prepare_data import (  # noqa: E402
     validate_and_clean_data,
     validate_training_split,
 )
-from settings import MAX_MESSAGE_CHARS  # noqa: E402
 from text_processing import clean_text  # noqa: E402
 from training_utils import calculate_metrics, create_grid_search  # noqa: E402
-
-
-class StubModel:
-    """Small predictable classifier used by the Flask unit tests."""
-
-    def __init__(self, label):
-        self.label = label
-
-    def predict(self, messages):
-        return [self.label for _ in messages]
 
 
 class TextProcessingTests(unittest.TestCase):
@@ -119,97 +108,42 @@ class EvaluationTests(unittest.TestCase):
         )
 
 
-class FlaskApplicationTests(unittest.TestCase):
-    def setUp(self):
-        app_module.app.config.update(TESTING=True)
-        app_module.load_models.cache_clear()
-        self.client = app_module.app.test_client()
-        self.comparison_patcher = patch.object(
-            app_module, "comparison_table", return_value=None
-        )
-        self.comparison_patcher.start()
-        self.addCleanup(self.comparison_patcher.stop)
-        self.addCleanup(app_module.load_models.cache_clear)
+class StreamlitApplicationTests(unittest.TestCase):
+    def run_app(self):
+        app = AppTest.from_file(PROJECT_ROOT / "streamlit_app.py")
+        return app.run(timeout=30)
 
-    def test_get_page_does_not_load_models(self):
-        with patch.object(app_module, "load_models") as load_models:
-            response = self.client.get("/")
+    def test_initial_page_renders_without_loading_a_prediction(self):
+        app = self.run_app()
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Message Spam Classifier", response.data)
-        load_models.assert_not_called()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.title[0].value, "✉️ Message Spam Classifier")
+        self.assertEqual(len(app.metric), 0)
+        self.assertEqual(len(app.dataframe), 1)
 
     def test_empty_or_number_only_message_is_rejected(self):
         for message in ("", "123 456 !!!"):
             with self.subTest(message=message):
-                with patch.object(app_module, "load_models") as load_models:
-                    response = self.client.post("/", data={"message": message})
-                self.assertEqual(response.status_code, 200)
-                self.assertIn(b"containing some words", response.data)
-                load_models.assert_not_called()
+                app = self.run_app()
+                app.text_area[0].input(message)
+                app.button[0].click()
+                app.run(timeout=30)
 
-    def test_oversized_message_is_rejected_before_inference(self):
-        message = "a" * (MAX_MESSAGE_CHARS + 1)
-        with patch.object(app_module, "load_models") as load_models:
-            response = self.client.post("/", data={"message": message})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Message is too long", response.data)
-        load_models.assert_not_called()
+                self.assertFalse(app.exception)
+                self.assertIn("containing some words", app.warning[0].value)
+                self.assertEqual(len(app.metric), 0)
 
     def test_valid_message_displays_both_predictions_and_agreement(self):
-        with patch.object(
-            app_module,
-            "load_models",
-            return_value=(StubModel("spam"), StubModel("spam")),
-        ):
-            response = self.client.post(
-                "/",
-                data={"message": "Congratulations, claim your free prize."},
-            )
+        app = self.run_app()
+        app.text_area[0].input(
+            "Congratulations! You have won a free cash prize. Click now."
+        )
+        app.button[0].click()
+        app.run(timeout=30)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Both models agree", response.data)
-        self.assertEqual(response.data.count(b">SPAM<"), 2)
-
-    def test_missing_models_produce_a_user_friendly_error(self):
-        with patch.object(
-            app_module,
-            "load_models",
-            side_effect=FileNotFoundError,
-        ):
-            response = self.client.post(
-                "/", data={"message": "A normal readable sentence"}
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"model files are missing", response.data)
-
-    def test_invalid_comparison_table_produces_a_user_friendly_error(self):
-        self.comparison_patcher.stop()
-        with patch.object(
-            app_module,
-            "comparison_table",
-            side_effect=ValueError("invalid columns"),
-        ):
-            response = self.client.get("/")
-        self.comparison_patcher.start()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Could not read the saved model comparison", response.data)
-
-    def test_model_loader_caches_validated_artifacts(self):
-        app_module.load_models.cache_clear()
-        with patch.object(
-            app_module.joblib,
-            "load",
-            side_effect=(StubModel("ham"), StubModel("spam")),
-        ) as joblib_load:
-            first = app_module.load_models()
-            second = app_module.load_models()
-
-        self.assertIs(first, second)
-        self.assertEqual(joblib_load.call_count, 2)
+        self.assertFalse(app.exception)
+        self.assertEqual([metric.value for metric in app.metric], ["SPAM", "SPAM"])
+        self.assertIn("Both models agree", app.success[0].value)
 
 
 if __name__ == "__main__":

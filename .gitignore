@@ -22,5 +22,9 @@ tempCodeRunnerFile.py
 
 # Generated project artifacts
 data/processed/
-models/
+models/*
+!models/naive_bayes_model.joblib
+!models/svm_model.joblib
+!models/comparison_table.csv
+!models/comparison_chart.png
 tmp/
