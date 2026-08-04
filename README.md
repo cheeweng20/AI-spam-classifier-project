@@ -15,6 +15,7 @@ cross-validation to select its best configuration.
 ```text
 AI-spam-classifier-project/
 |-- data/
+|   |-- README.md
 |   |-- messages.csv
 |   `-- processed/
 |-- models/
@@ -23,6 +24,7 @@ AI-spam-classifier-project/
 |   |-- train_naive_bayes.py
 |   |-- train_svm.py
 |   |-- compare_models.py
+|   |-- settings.py
 |   `-- app.py
 |-- tests/
 `-- requirements.txt
@@ -58,6 +60,10 @@ The web application will be available at:
 http://127.0.0.1:5000
 ```
 
+The interface validates empty and oversized input, loads the two trusted model
+artifacts once per application process, reports whether the models agree, and
+handles missing or incompatible artifacts without exposing a debugger.
+
 ## Data Preparation
 
 `prepare_data.py` performs the following operations:
@@ -67,7 +73,9 @@ http://127.0.0.1:5000
 3. Removes empty, invalid, conflicting, and duplicate messages.
 4. Cleans punctuation, numbers, and repeated whitespace.
 5. Creates a stratified 70/30 training and test split using random state 42.
-6. Saves the shared text and label splits to `data/processed/`.
+6. Verifies that every training class supports five-fold cross-validation.
+7. Checks that no cleaned message occurs in both training and test sets.
+8. Saves the shared text and label splits to `data/processed/`.
 
 ## Feature Extraction and Model Selection
 

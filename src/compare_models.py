@@ -7,35 +7,33 @@ Usage:
 """
 
 import json
-from pathlib import Path
+
 import joblib
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
+
+from settings import MODELS_DIR, PROCESSED_DATA_DIR
 from training_utils import calculate_metrics, load_test_data
 
 
 def main():
-    project_root = Path(__file__).resolve().parents[1]
-    processed_dir = project_root / "data" / "processed"
-    models_dir = project_root / "models"
-
     model_paths = {
-        "Naive Bayes": models_dir / "naive_bayes_model.joblib",
-        "SVM": models_dir / "svm_model.joblib",
+        "Naive Bayes": MODELS_DIR / "naive_bayes_model.joblib",
+        "SVM": MODELS_DIR / "svm_model.joblib",
     }
     summary_paths = {
-        "Naive Bayes": models_dir / "naive_bayes_training_summary.json",
-        "SVM": models_dir / "svm_training_summary.json",
+        "Naive Bayes": MODELS_DIR / "naive_bayes_training_summary.json",
+        "SVM": MODELS_DIR / "svm_training_summary.json",
     }
     required_paths = [*model_paths.values(), *summary_paths.values()]
     missing = [path.name for path in required_paths if not path.is_file()]
     if missing:
         raise FileNotFoundError(
-            f"Missing trained models in {models_dir}: {', '.join(missing)}. "
+            f"Missing trained models in {MODELS_DIR}: {', '.join(missing)}. "
             "Train both models first."
         )
 
-    X_test, y_test = load_test_data(processed_dir)
+    X_test, y_test = load_test_data(PROCESSED_DATA_DIR)
     results = []
     for model_name, model_path in model_paths.items():
         model = joblib.load(model_path)
@@ -52,19 +50,31 @@ def main():
     print("=== Model Comparison ===")
     print(df.round(4))
 
-    df.to_csv(models_dir / "comparison_table.csv")
-    print(f"\nSaved table to {models_dir}/comparison_table.csv")
+    df.to_csv(MODELS_DIR / "comparison_table.csv")
+    print(f"\nSaved table to {MODELS_DIR}/comparison_table.csv")
 
-    test_metrics = df[["accuracy", "precision", "recall", "f1"]]
+    test_metrics = df[["accuracy", "precision", "recall", "f1"]].rename(
+        columns={
+            "accuracy": "Accuracy",
+            "precision": "Precision",
+            "recall": "Recall",
+            "f1": "F1",
+        }
+    )
     ax = test_metrics.plot(kind="bar", figsize=(8, 5), rot=0)
+    ax.set_xlabel("Model")
     ax.set_ylabel("Score")
     ax.set_title("Naive Bayes vs SVM")
     ax.set_ylim(0, 1.05)
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(title="Metric", loc="lower right")
+    for container in ax.containers:
+        ax.bar_label(container, fmt="%.3f", fontsize=8, padding=2)
     plt.tight_layout()
     figure = ax.get_figure()
-    figure.savefig(models_dir / "comparison_chart.png", dpi=150)
+    figure.savefig(MODELS_DIR / "comparison_chart.png", dpi=150)
     plt.close(figure)
-    print(f"Saved chart to {models_dir}/comparison_chart.png")
+    print(f"Saved chart to {MODELS_DIR}/comparison_chart.png")
 
 
 if __name__ == "__main__":

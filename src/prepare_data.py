@@ -10,20 +10,19 @@ Usage:
 """
 
 import re
-from pathlib import Path
+
 import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from settings import (
+    CV_FOLDS,
+    DATA_PATH,
+    EXPECTED_LABELS,
+    PROCESSED_DATA_DIR,
+    RANDOM_STATE,
+    TEST_SIZE,
+)
 from text_processing import clean_text
-
-RANDOM_STATE = 42
-TEST_SIZE = 0.3
-
-# Resolve files from the project directory, not from whichever directory the
-# command happens to be run in.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-DATA_PATH = PROJECT_ROOT / "data" / "messages.csv"
 
 
 def load_message_data(path):
@@ -34,23 +33,40 @@ def load_message_data(path):
     names are supported to make format errors easier to diagnose.
     """
     try:
-        data = pd.read_csv(path, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        data = pd.read_csv(path, encoding="windows-1252")
+        try:
+            data = pd.read_csv(path, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            data = pd.read_csv(path, encoding="windows-1252")
+    except pd.errors.EmptyDataError as exception:
+        raise ValueError(f"The dataset is empty: {path}") from exception
+    except pd.errors.ParserError as exception:
+        raise ValueError(f"The dataset is not a valid CSV file: {path}") from exception
 
     normalized_columns = {
         re.sub(r"[^a-z0-9]", "", str(column).lower()): column
         for column in data.columns
     }
     text_col_candidates = ["message", "text", "body", "content"]
-    label_col_candidates = ["label", "category", "spamham", "spam", "class", "target", "v1"]
+    label_col_candidates = [
+        "label",
+        "category",
+        "spamham",
+        "spam",
+        "class",
+        "target",
+        "v1",
+    ]
 
     text_col = next(
         (normalized_columns[c] for c in text_col_candidates if c in normalized_columns),
         None,
     )
     label_col = next(
-        (normalized_columns[c] for c in label_col_candidates if c in normalized_columns),
+        (
+            normalized_columns[c]
+            for c in label_col_candidates
+            if c in normalized_columns
+        ),
         None,
     )
 
@@ -99,7 +115,7 @@ def validate_and_clean_data(data, dataset):
     }).dropna(subset=["label"])
     cleaned = cleaned[cleaned["text"].str.len() > 0]
 
-    unknown_labels = sorted(set(cleaned["label"]) - {"ham", "spam"})
+    unknown_labels = sorted(set(cleaned["label"]) - EXPECTED_LABELS)
     if unknown_labels:
         raise ValueError(
             f"Unsupported label values in the {dataset} dataset: "
@@ -116,7 +132,7 @@ def validate_and_clean_data(data, dataset):
 
     cleaned = cleaned.drop_duplicates(subset="text").reset_index(drop=True)
     label_counts = cleaned["label"].value_counts()
-    if set(label_counts.index) != {"ham", "spam"} or label_counts.min() < 2:
+    if set(label_counts.index) != EXPECTED_LABELS or label_counts.min() < 2:
         raise ValueError(
             f"The {dataset} dataset needs at least two usable ham and spam messages. "
             f"Found: {label_counts.to_dict()}."
@@ -125,15 +141,38 @@ def validate_and_clean_data(data, dataset):
     return cleaned
 
 
-def main():
-    processed_dir = PROJECT_ROOT / "data" / "processed"
+def validate_training_split(X_train, X_test, y_train, y_test):
+    """Reject a split that cannot support leakage-safe five-fold validation."""
+    if len(X_train) != len(y_train) or len(X_test) != len(y_test):
+        raise ValueError("Text and label row counts do not match after splitting.")
 
+    train_counts = y_train.value_counts()
+    test_counts = y_test.value_counts()
+    if set(train_counts.index) != EXPECTED_LABELS:
+        raise ValueError("The training split must contain both ham and spam.")
+    if set(test_counts.index) != EXPECTED_LABELS:
+        raise ValueError("The test split must contain both ham and spam.")
+    if train_counts.min() < CV_FOLDS:
+        raise ValueError(
+            f"Each training class needs at least {CV_FOLDS} messages for "
+            f"{CV_FOLDS}-fold cross-validation. Found: {train_counts.to_dict()}."
+        )
+
+    overlap = set(X_train).intersection(X_test)
+    if overlap:
+        raise ValueError(
+            f"Detected {len(overlap)} duplicated messages across the training "
+            "and test sets. Reprepare and deduplicate the dataset."
+        )
+
+
+def main():
     if not DATA_PATH.is_file():
         raise FileNotFoundError(
             f"Training file not found: {DATA_PATH}\n"
             "Put messages.csv in the data directory."
         )
-    processed_dir.mkdir(parents=True, exist_ok=True)
+    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading message data from {DATA_PATH} ...")
     raw_data = load_message_data(DATA_PATH)
@@ -153,15 +192,16 @@ def main():
         random_state=RANDOM_STATE,
         stratify=y,
     )
+    validate_training_split(X_train, X_test, y_train, y_test)
 
     print(f"Training set: {len(X_train)} messages")
     print(f"Test set: {len(X_test)} messages")
 
-    joblib.dump(X_train, processed_dir / "X_train.joblib")
-    joblib.dump(X_test, processed_dir / "X_test.joblib")
-    joblib.dump(y_train, processed_dir / "y_train.joblib")
-    joblib.dump(y_test, processed_dir / "y_test.joblib")
-    print(f"\nDone. Processed data saved to {processed_dir}/")
+    joblib.dump(X_train, PROCESSED_DATA_DIR / "X_train.joblib")
+    joblib.dump(X_test, PROCESSED_DATA_DIR / "X_test.joblib")
+    joblib.dump(y_train, PROCESSED_DATA_DIR / "y_train.joblib")
+    joblib.dump(y_test, PROCESSED_DATA_DIR / "y_test.joblib")
+    print(f"\nDone. Processed data saved to {PROCESSED_DATA_DIR}/")
 
 
 if __name__ == "__main__":

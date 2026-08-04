@@ -10,22 +10,40 @@
   <main class="container">
     <header>
       <h1>Message Spam Classifier</h1>
-      <p>Compare Naive Bayes and SVM predictions for the same message.</p>
+      <p>Compare leakage-safe Naive Bayes and SVM pipeline predictions for the same email text.</p>
     </header>
 
     <section class="card">
       <form method="post">
         <label for="message">Message to classify</label>
-        <textarea id="message" name="message" rows="6" placeholder="e.g. Congratulations! You've won a free prize, click here!">{{ message }}</textarea>
-        <button type="submit">Classify message</button>
+        <textarea id="message" name="message" rows="6" maxlength="{{ max_message_chars }}" aria-describedby="message-help message-count" placeholder="e.g. Congratulations! You've won a free prize, click here!">{{ message }}</textarea>
+        <div class="field-help">
+          <span id="message-help">Enter email text containing at least one word.</span>
+          <span id="message-count" aria-live="polite">0 / {{ max_message_chars }}</span>
+        </div>
+        <div class="actions">
+          <button type="submit">Classify message</button>
+          <a class="secondary-action" href="{{ url_for('index') }}">Clear</a>
+        </div>
       </form>
     </section>
 
-    {% if error %}
-      <p class="alert" role="alert">{{ error }}</p>
+    {% if errors %}
+      <div class="alert" role="alert">
+        {% for error in errors %}
+          <p>{{ error }}</p>
+        {% endfor %}
+      </div>
     {% endif %}
 
     {% if results %}
+      <p class="status {{ 'agreement' if results.agreement else 'difference' }}">
+        {% if results.agreement %}
+          Both models agree on this prediction.
+        {% else %}
+          The models disagree; review the message carefully.
+        {% endif %}
+      </p>
       <section class="results" aria-label="Classification results">
         <article class="result-card">
           <h2>Naive Bayes</h2>
@@ -48,5 +66,14 @@
       </section>
     {% endif %}
   </main>
+  <script>
+    const message = document.getElementById("message");
+    const count = document.getElementById("message-count");
+    const updateCount = () => {
+      count.textContent = `${message.value.length} / ${message.maxLength}`;
+    };
+    message.addEventListener("input", updateCount);
+    updateCount();
+  </script>
 </body>
 </html>

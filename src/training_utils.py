@@ -5,6 +5,8 @@ import joblib
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+import sklearn
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -15,6 +17,8 @@ from sklearn.metrics import (
     recall_score,
 )
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from settings import CV_FOLDS, EXPECTED_LABELS, RANDOM_STATE
 
 
 ARTIFACT_NAMES = (
@@ -23,51 +27,73 @@ ARTIFACT_NAMES = (
     "y_train.joblib",
     "y_test.joblib",
 )
-RANDOM_STATE = 42
-CV_FOLDS = 5
 
 
-def load_training_data(processed_dir):
-    """Load processed artifacts and fail early when they are incomplete."""
-    missing = [name for name in ARTIFACT_NAMES if not (processed_dir / name).is_file()]
-    if missing:
-        raise FileNotFoundError(
-            f"Missing processed files in {processed_dir}: {', '.join(missing)}. "
-            "Run prepare_data.py first."
-        )
-
-    X_train, X_test, y_train, y_test = (
-        joblib.load(processed_dir / name) for name in ARTIFACT_NAMES
-    )
-
-    if len(X_train) != len(y_train) or len(X_test) != len(y_test):
-        raise ValueError("Text and label row counts do not match. Reprepare the data.")
-    if set(y_train) != {"ham", "spam"} or set(y_test) != {"ham", "spam"}:
-        raise ValueError("Training and test labels must both contain ham and spam.")
-
-    return X_train, X_test, y_train, y_test
-
-
-def load_test_data(processed_dir):
-    """Load and validate the shared test features and labels."""
-    feature_path = processed_dir / "X_test.joblib"
-    label_path = processed_dir / "y_test.joblib"
+def _load_artifacts(processed_dir, artifact_names):
+    """Load a complete set of processed artifacts."""
     missing = [
-        path.name for path in (feature_path, label_path) if not path.is_file()
+        name for name in artifact_names if not (processed_dir / name).is_file()
     ]
     if missing:
         raise FileNotFoundError(
             f"Missing processed files in {processed_dir}: {', '.join(missing)}. "
             "Run prepare_data.py first."
         )
+    return tuple(joblib.load(processed_dir / name) for name in artifact_names)
 
-    X_test = joblib.load(feature_path)
-    y_test = joblib.load(label_path)
+
+def load_training_data(processed_dir):
+    """Load processed artifacts and fail early when they are incomplete."""
+    X_train, X_test, y_train, y_test = _load_artifacts(
+        processed_dir, ARTIFACT_NAMES
+    )
+
+    if len(X_train) != len(y_train) or len(X_test) != len(y_test):
+        raise ValueError("Text and label row counts do not match. Reprepare the data.")
+    if set(y_train) != EXPECTED_LABELS or set(y_test) != EXPECTED_LABELS:
+        raise ValueError("Training and test labels must both contain ham and spam.")
+    train_counts = pd.Series(y_train).value_counts()
+    if train_counts.min() < CV_FOLDS:
+        raise ValueError(
+            f"Each training class needs at least {CV_FOLDS} messages for "
+            f"{CV_FOLDS}-fold cross-validation. Found: {train_counts.to_dict()}."
+        )
+    overlap = set(X_train).intersection(X_test)
+    if overlap:
+        raise ValueError(
+            f"Detected {len(overlap)} duplicated messages across the stored "
+            "training and test sets."
+        )
+
+    return X_train, X_test, y_train, y_test
+
+
+def load_test_data(processed_dir):
+    """Load and validate the shared test features and labels."""
+    X_test, y_test = _load_artifacts(
+        processed_dir, ("X_test.joblib", "y_test.joblib")
+    )
     if len(X_test) != len(y_test):
         raise ValueError("Test text and label row counts do not match.")
-    if set(y_test) != {"ham", "spam"}:
+    if set(y_test) != EXPECTED_LABELS:
         raise ValueError("Test labels must contain both ham and spam.")
     return X_test, y_test
+
+
+def create_text_pipeline(classifier):
+    """Build the shared leakage-safe text-classification pipeline."""
+    return Pipeline([
+        (
+            "tfidf",
+            TfidfVectorizer(
+                stop_words="english",
+                min_df=2,
+                max_df=0.98,
+                sublinear_tf=True,
+            ),
+        ),
+        ("classifier", classifier),
+    ])
 
 
 def create_grid_search(pipeline, parameter_grid):
@@ -122,7 +148,11 @@ def save_grid_search_results(search, model_name, artifact_stem, output_dir):
         "cv_folds": CV_FOLDS,
         "selection_metric": "F1-score (spam is the positive class)",
         "best_cv_f1": float(search.best_score_),
+        "best_cv_f1_std": float(
+            search.cv_results_["std_test_f1"][search.best_index_]
+        ),
         "best_parameters": search.best_params_,
+        "scikit_learn_version": sklearn.__version__,
     }
     with (output_dir / f"{artifact_stem}_training_summary.json").open(
         "w", encoding="utf-8"
@@ -173,5 +203,53 @@ def save_confusion_matrix(y_true, y_pred, title, color_map, output_path):
         ax=axis,
     )
     axis.set_title(title)
+    axis.set_xlabel("Predicted label")
+    axis.set_ylabel("Actual label")
+    figure.tight_layout()
     figure.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(figure)
+
+
+def train_and_evaluate_model(
+    classifier,
+    classifier_parameter_grid,
+    model_name,
+    artifact_stem,
+    confusion_matrix_filename,
+    color_map,
+    processed_dir,
+    output_dir,
+):
+    """Run the shared training, evaluation, and artifact-saving workflow."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    X_train, X_test, y_train, y_test = load_training_data(processed_dir)
+
+    parameter_grid = {
+        "tfidf__ngram_range": [(1, 1), (1, 2)],
+        **classifier_parameter_grid,
+    }
+    search = create_grid_search(
+        create_text_pipeline(classifier), parameter_grid
+    )
+    search.fit(X_train, y_train)
+    model = search.best_estimator_
+    save_grid_search_results(
+        search, model_name, artifact_stem, output_dir
+    )
+
+    y_pred = model.predict(X_test)
+    metrics = calculate_metrics(y_test, y_pred)
+    print_results(model_name, y_test, y_pred, metrics)
+    save_confusion_matrix(
+        y_test,
+        y_pred,
+        f"{model_name} - Confusion Matrix",
+        color_map,
+        output_dir / confusion_matrix_filename,
+    )
+
+    joblib.dump(model, output_dir / f"{artifact_stem}_model.joblib")
+    print(
+        f"\nSaved model, grid-search results, and confusion matrix to "
+        f"{output_dir}/"
+    )
