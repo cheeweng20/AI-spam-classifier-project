@@ -84,6 +84,9 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(metrics["precision"], 2 / 3)
         self.assertEqual(metrics["recall"], 1.0)
         self.assertEqual(metrics["f1"], 0.8)
+        self.assertEqual(
+            set(metrics), {"accuracy", "precision", "recall", "f1"}
+        )
 
     def test_grid_search_uses_stratified_five_fold_cv_and_spam_f1(self):
         pipeline = Pipeline([
@@ -120,6 +123,10 @@ class StreamlitApplicationTests(unittest.TestCase):
         self.assertEqual(app.title[0].value, "✉️ Message Spam Classifier")
         self.assertEqual(len(app.metric), 0)
         self.assertEqual(len(app.dataframe), 1)
+        self.assertEqual(
+            list(app.dataframe[0].value.columns),
+            ["Model", "Accuracy", "Precision", "Recall", "F1"],
+        )
 
     def test_empty_or_number_only_message_is_rejected(self):
         for message in ("", "123 456 !!!"):

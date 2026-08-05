@@ -147,10 +147,6 @@ def save_grid_search_results(search, model_name, artifact_stem, output_dir):
         "model": model_name,
         "cv_folds": CV_FOLDS,
         "selection_metric": "F1-score (spam is the positive class)",
-        "best_cv_f1": float(search.best_score_),
-        "best_cv_f1_std": float(
-            search.cv_results_["std_test_f1"][search.best_index_]
-        ),
         "best_parameters": search.best_params_,
         "scikit_learn_version": sklearn.__version__,
     }
@@ -159,8 +155,7 @@ def save_grid_search_results(search, model_name, artifact_stem, output_dir):
     ) as file:
         json.dump(summary, file, indent=2)
 
-    print(f"Best 5-fold CV F1: {search.best_score_:.4f}")
-    print("Best parameters:")
+    print("Best parameters selected using five-fold cross-validation:")
     for name, value in search.best_params_.items():
         print(f"  {name}: {value}")
 

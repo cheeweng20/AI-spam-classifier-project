@@ -24,7 +24,6 @@ COMPARISON_COLUMNS = (
     "precision",
     "recall",
     "f1",
-    "cv_f1",
 )
 
 
@@ -41,9 +40,8 @@ def load_models():
     return models
 
 
-@st.cache_data
 def load_comparison_table():
-    """Load and validate the saved model-comparison results."""
+    """Load the latest saved model-comparison results from disk."""
     table = pd.read_csv(COMPARISON_TABLE_PATH)
     missing_columns = set(COMPARISON_COLUMNS) - set(table.columns)
     if missing_columns:
@@ -57,7 +55,6 @@ def load_comparison_table():
         "precision": "Precision",
         "recall": "Recall",
         "f1": "F1",
-        "cv_f1": "CV F1",
     })
 
 

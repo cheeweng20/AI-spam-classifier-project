@@ -6,8 +6,6 @@ Usage:
     python src/compare_models.py
 """
 
-import json
-
 import joblib
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -21,12 +19,7 @@ def main():
         "Naive Bayes": MODELS_DIR / "naive_bayes_model.joblib",
         "SVM": MODELS_DIR / "svm_model.joblib",
     }
-    summary_paths = {
-        "Naive Bayes": MODELS_DIR / "naive_bayes_training_summary.json",
-        "SVM": MODELS_DIR / "svm_training_summary.json",
-    }
-    required_paths = [*model_paths.values(), *summary_paths.values()]
-    missing = [path.name for path in required_paths if not path.is_file()]
+    missing = [path.name for path in model_paths.values() if not path.is_file()]
     if missing:
         raise FileNotFoundError(
             f"Missing trained models in {MODELS_DIR}: {', '.join(missing)}. "
@@ -38,12 +31,9 @@ def main():
     for model_name, model_path in model_paths.items():
         model = joblib.load(model_path)
         metrics = calculate_metrics(y_test, model.predict(X_test))
-        with summary_paths[model_name].open(encoding="utf-8") as file:
-            training_summary = json.load(file)
         results.append({
             "model": model_name,
             **metrics,
-            "cv_f1": training_summary["best_cv_f1"],
         })
 
     df = pd.DataFrame(results).set_index("model")
