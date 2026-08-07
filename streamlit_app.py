@@ -12,7 +12,7 @@ from src.settings import FEATURE_COLUMNS, MODELS_DIR
 
 
 MODEL_PATHS = {
-    "Decision Tree": MODELS_DIR / "decision_tree_model.joblib",
+    "Logistic Regression": MODELS_DIR / "logistic_regression_model.joblib",
     "Random Forest": MODELS_DIR / "random_forest_model.joblib",
 }
 COMPARISON_TABLE_PATH = MODELS_DIR / "comparison_table.csv"
@@ -82,7 +82,7 @@ st.set_page_config(
 st.title("🏦 Loan Approval Prediction")
 st.write(
     "Enter an applicant's financial and loan information to compare predictions "
-    "from Decision Tree and Random Forest."
+    "from Logistic Regression and Random Forest."
 )
 st.info(
     "Educational demonstration only. This prototype predicts patterns in the "
@@ -225,6 +225,6 @@ else:
 if COMPARISON_CHART_PATH.is_file():
     st.image(
         str(COMPARISON_CHART_PATH),
-        caption="Decision Tree and Random Forest test-set performance",
+        caption="Logistic Regression and Random Forest test-set performance",
         width="stretch",
     )

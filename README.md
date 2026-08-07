@@ -3,7 +3,7 @@
 This project predicts whether a loan application is **Approved** or **Rejected**
 using two supervised classification algorithms:
 
-- Decision Tree as an interpretable single-tree model
+- Logistic Regression as the regularized linear baseline
 - Random Forest as the primary nonlinear model
 
 Both models use the same validated data split and leakage-safe scikit-learn
@@ -14,6 +14,23 @@ untouched test set.
 > **Educational use only:** the target records approval decisions, not borrower
 > default or repayment. This prototype must not be used for real lending
 > decisions.
+
+## 🔶 Logistic Regression Branch — Required Changes
+
+> **Highlighted replacement:** the first model is now **Logistic Regression**.
+> Replace every Decision Tree training command, model-artifact name, model label,
+> and visualization label with the Logistic Regression equivalent below.
+
+| Replace | With |
+|---|---|
+| `src/train_decision_tree.py` | `src/train_logistic_regression.py` |
+| `DecisionTreeClassifier` | `LogisticRegression(max_iter=2000, random_state=42)` |
+| `decision_tree_*` artifacts | `logistic_regression_*` artifacts |
+| Unscaled numeric features | Standardized numeric features (`StandardScaler`) |
+
+The Logistic Regression parameter search evaluates `C` and `class_weight` with
+five-fold stratified cross-validation. Numeric scaling is required because this
+model is sensitive to feature magnitudes.
 
 ## Project Structure
 
@@ -27,7 +44,7 @@ loan-approval-prediction/
 |-- streamlit_app.py
 |-- src/
 |   |-- prepare_data.py
-|   |-- train_decision_tree.py
+|   |-- train_logistic_regression.py
 |   |-- train_random_forest.py
 |   |-- compare_models.py
 |   |-- settings.py
@@ -67,7 +84,7 @@ Run the following commands from the project root:
 
 ```bash
 python src/prepare_data.py
-python src/train_decision_tree.py
+python src/train_logistic_regression.py
 python src/train_random_forest.py
 python src/compare_models.py
 python -m streamlit run streamlit_app.py
@@ -97,8 +114,10 @@ model-comparison results.
 Preprocessing is fitted inside every model pipeline and every cross-validation
 fold:
 
-- Decision Tree and Random Forest pass numeric features through unchanged and
-  one-hot encode `education` and `self_employed`.
+- Logistic Regression standardizes numeric features and one-hot encodes
+  `education` and `self_employed`.
+- Random Forest passes numeric features through unchanged and one-hot encodes
+  `education` and `self_employed`.
 
 GridSearchCV uses five-fold `StratifiedKFold` validation. It records accuracy,
 Approved-class precision, recall, and F1-score. F1-score is the selection metric
@@ -112,31 +131,31 @@ Final performance on the untouched 1,281-row test set:
 | Model | Accuracy | Precision | Recall | F1-score |
 |---|---:|---:|---:|---:|
 | Random Forest | 98.44% | 98.26% | 99.25% | 98.75% |
-| Decision Tree | 98.05% | 98.01% | 98.87% | 98.44% |
+| Logistic Regression | 93.83% | 96.50% | 93.48% | 94.96% |
 
 Random Forest produced 20 incorrect predictions: 14 rejected applications were
 predicted Approved and 6 approved applications were predicted Rejected.
-Decision Tree produced 25 incorrect predictions: 16 rejected applications were
-predicted Approved and 9 approved applications were predicted Rejected.
+Logistic Regression produced 79 incorrect predictions: 27 rejected applications
+were predicted Approved and 52 approved applications were predicted Rejected.
 
-The selected Decision Tree used unrestricted depth, a minimum leaf size of five,
-and no class weighting. The selected Random Forest used unrestricted depth, a
-minimum leaf size of one, and no class weighting.
+The selected Logistic Regression used `C=0.1`, balanced class weights, and a
+maximum of 2,000 solver iterations. The selected Random Forest used unrestricted
+depth, a minimum leaf size of one, and no class weighting.
 
 The training and comparison scripts create:
 
-- `models/decision_tree_model.joblib`
+- `models/logistic_regression_model.joblib`
 - `models/random_forest_model.joblib`
-- `models/decision_tree_grid_search.csv`
+- `models/logistic_regression_grid_search.csv`
 - `models/random_forest_grid_search.csv`
-- `models/decision_tree_training_summary.json`
+- `models/logistic_regression_training_summary.json`
 - `models/random_forest_training_summary.json`
-- `models/confusion_matrix_decision_tree.png`
+- `models/confusion_matrix_logistic_regression.png`
 - `models/confusion_matrix_random_forest.png`
 - `models/comparison_table.csv`
 - `models/comparison_chart.png`
 
-The high performance of the tree-based model must be interpreted cautiously.
+The high performance of the Random Forest model must be interpreted cautiously.
 `cibil_score` is strongly associated with the target, and results from this
 single educational dataset should not be generalized to real applicants.
 

@@ -1,4 +1,4 @@
-"""Compare the trained Decision Tree and Random Forest models."""
+"""Compare the trained Logistic Regression and Random Forest models."""
 
 import joblib
 import matplotlib.pyplot as plt
@@ -10,7 +10,7 @@ from training_utils import calculate_metrics, load_test_data
 
 def main():
     model_paths = {
-        "Decision Tree": MODELS_DIR / "decision_tree_model.joblib",
+        "Logistic Regression": MODELS_DIR / "logistic_regression_model.joblib",
         "Random Forest": MODELS_DIR / "random_forest_model.joblib",
     }
     missing = [path.name for path in model_paths.values() if not path.is_file()]
@@ -47,7 +47,7 @@ def main():
     axis = chart_data.plot(kind="bar", figsize=(9, 5.5), rot=0)
     axis.set_xlabel("Model")
     axis.set_ylabel("Score")
-    axis.set_title("Decision Tree vs Random Forest")
+    axis.set_title("Logistic Regression vs Random Forest")
     axis.set_ylim(0, 1.05)
     axis.grid(axis="y", alpha=0.25)
     axis.legend(title="Metric", loc="lower right")
