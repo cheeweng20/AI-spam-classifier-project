@@ -153,9 +153,9 @@ class StreamlitApplicationTests(unittest.TestCase):
         app = self.run_app()
         values = [
             5_000_000,
-            750,
             10_000_000,
             10,
+            750,
         ]
         for widget, value in zip(app.number_input, values):
             widget.set_value(value)

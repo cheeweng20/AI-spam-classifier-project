@@ -84,24 +84,10 @@ st.write(
     "Enter an applicant's financial and loan information to compare predictions "
     "from Logistic Regression and Random Forest."
 )
-st.info(
-    "Educational demonstration only. This prototype predicts patterns in the "
-    "provided dataset and must not be used to make real lending decisions."
-)
-
 with st.form("loan_application_form"):
-    applicant_column, loan_column, assets_column = st.columns(3)
-    with applicant_column:
-        st.subheader("Applicant")
-        no_of_dependents = st.number_input(
-            "Number of dependents", min_value=0, max_value=20, value=2, step=1
-        )
-        education = st.selectbox(
-            "Education", options=["Graduate", "Not Graduate"]
-        )
-        self_employed = st.selectbox(
-            "Self-employed", options=["No", "Yes"]
-        )
+    financial_column, credit_column = st.columns(2)
+    with financial_column:
+        st.subheader("Financial and loan details")
         income_annum = st.number_input(
             "Annual income",
             min_value=100_000,
@@ -110,9 +96,6 @@ with st.form("loan_application_form"):
             step=100_000,
             help="Use the same monetary units as the training dataset.",
         )
-
-    with loan_column:
-        st.subheader("Loan")
         loan_amount = st.number_input(
             "Loan amount",
             min_value=100_000,
@@ -123,39 +106,11 @@ with st.form("loan_application_form"):
         loan_term = st.number_input(
             "Loan term", min_value=1, max_value=40, value=10, step=1
         )
+
+    with credit_column:
+        st.subheader("Credit details")
         cibil_score = st.number_input(
             "CIBIL score", min_value=300, max_value=900, value=600, step=1
-        )
-
-    with assets_column:
-        st.subheader("Assets")
-        residential_assets_value = st.number_input(
-            "Residential assets value",
-            min_value=0,
-            max_value=100_000_000,
-            value=5_000_000,
-            step=100_000,
-        )
-        commercial_assets_value = st.number_input(
-            "Commercial assets value",
-            min_value=0,
-            max_value=100_000_000,
-            value=3_000_000,
-            step=100_000,
-        )
-        luxury_assets_value = st.number_input(
-            "Luxury assets value",
-            min_value=0,
-            max_value=100_000_000,
-            value=10_000_000,
-            step=100_000,
-        )
-        bank_asset_value = st.number_input(
-            "Bank asset value",
-            min_value=0,
-            max_value=100_000_000,
-            value=4_000_000,
-            step=100_000,
         )
 
     submitted = st.form_submit_button(
@@ -164,17 +119,10 @@ with st.form("loan_application_form"):
 
 if submitted:
     application = build_application_data({
-        "no_of_dependents": no_of_dependents,
-        "education": education,
-        "self_employed": self_employed,
         "income_annum": income_annum,
         "loan_amount": loan_amount,
         "loan_term": loan_term,
         "cibil_score": cibil_score,
-        "residential_assets_value": residential_assets_value,
-        "commercial_assets_value": commercial_assets_value,
-        "luxury_assets_value": luxury_assets_value,
-        "bank_asset_value": bank_asset_value,
     })
     try:
         predictions = predict_application(application)
