@@ -1,13 +1,12 @@
-"""Focused regression tests for data validation and shared preprocessing."""
+"""Regression tests for loan data, model evaluation, and Streamlit inference."""
 
 import sys
 import unittest
 from pathlib import Path
 
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
 from streamlit.testing.v1 import AppTest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,97 +17,106 @@ from prepare_data import (  # noqa: E402
     validate_and_clean_data,
     validate_training_split,
 )
-from text_processing import clean_text  # noqa: E402
-from training_utils import calculate_metrics, create_grid_search  # noqa: E402
+from settings import FEATURE_COLUMNS  # noqa: E402
+from training_utils import (  # noqa: E402
+    calculate_metrics,
+    create_grid_search,
+    create_model_pipeline,
+)
 
 
-class TextProcessingTests(unittest.TestCase):
-    def test_clean_text_normalizes_case_numbers_and_punctuation(self):
-        self.assertEqual(clean_text("WIN prize-123 NOW!!!"), "win prize now")
+def valid_rows():
+    return pd.DataFrame({
+        "loan_id": [1, 2, 3, 4],
+        "no_of_dependents": [0, 1, 2, 3],
+        "education": [" Graduate", "Not Graduate", "Graduate", "Not Graduate"],
+        "self_employed": [" No", "Yes", "No", "Yes"],
+        "income_annum": [1_000_000, 2_000_000, 3_000_000, 4_000_000],
+        "loan_amount": [2_000_000, 4_000_000, 5_000_000, 8_000_000],
+        "loan_term": [4, 8, 10, 12],
+        "cibil_score": [400, 500, 700, 800],
+        "residential_assets_value": [-100_000, 1_000_000, 2_000_000, 3_000_000],
+        "commercial_assets_value": [0, 500_000, 1_000_000, 1_500_000],
+        "luxury_assets_value": [500_000, 1_000_000, 1_500_000, 2_000_000],
+        "bank_asset_value": [100_000, 200_000, 300_000, 400_000],
+        "loan_status": [" Rejected", "Rejected", "Approved", "Approved"],
+    })
 
-    def test_validation_normalizes_and_deduplicates_rows(self):
-        data = pd.DataFrame({
-            "label": ["HAM", "0", "spam", "1", "ham", "ham"],
-            "text": [
-                "Hello!",
-                "hello",
-                "WIN now",
-                "Different offer",
-                "123",
-                "A second normal message",
-            ],
-        })
 
-        cleaned = validate_and_clean_data(data, "test")
+class DataValidationTests(unittest.TestCase):
+    def test_validation_normalizes_categories_and_preserves_documented_anomaly(self):
+        cleaned = validate_and_clean_data(valid_rows())
+        self.assertEqual(list(cleaned["education"]), [
+            "Graduate", "Not Graduate", "Graduate", "Not Graduate"
+        ])
+        self.assertEqual(cleaned.loc[0, "residential_assets_value"], -100_000)
+        self.assertIn("negative", cleaned.attrs["quality_warnings"][0])
 
-        self.assertEqual(len(cleaned), 4)
-        self.assertEqual(set(cleaned["label"]), {"ham", "spam"})
-        self.assertNotIn("", set(cleaned["text"]))
+    def test_validation_rejects_missing_column(self):
+        data = valid_rows().drop(columns="cibil_score")
+        with self.assertRaisesRegex(ValueError, "missing columns"):
+            validate_and_clean_data(data)
 
-    def test_validation_rejects_conflicting_duplicate_labels(self):
-        data = pd.DataFrame({
-            "label": ["ham", "spam", "ham", "spam"],
-            "text": ["Same message", "same message!", "Other ham", "Other spam"],
-        })
+    def test_validation_rejects_duplicate_loan_id(self):
+        data = valid_rows()
+        data.loc[1, "loan_id"] = 1
+        with self.assertRaisesRegex(ValueError, "Duplicate loan_id"):
+            validate_and_clean_data(data)
 
-        with self.assertRaisesRegex(ValueError, "conflicting"):
-            validate_and_clean_data(data, "test")
+    def test_validation_rejects_unknown_category(self):
+        data = valid_rows()
+        data.loc[0, "education"] = "Unknown"
+        with self.assertRaisesRegex(ValueError, "Unsupported or missing"):
+            validate_and_clean_data(data)
 
-    def test_split_rejects_too_few_training_samples_for_five_folds(self):
-        X_train = pd.Series([f"train {index}" for index in range(8)])
-        y_train = pd.Series(["ham"] * 4 + ["spam"] * 4)
-        X_test = pd.Series(["test ham", "test spam"])
-        y_test = pd.Series(["ham", "spam"])
-
-        with self.assertRaisesRegex(ValueError, "at least 5"):
-            validate_training_split(X_train, X_test, y_train, y_test)
-
-    def test_split_rejects_train_test_message_overlap(self):
-        X_train = pd.Series([f"train {index}" for index in range(10)])
-        y_train = pd.Series(["ham"] * 5 + ["spam"] * 5)
-        X_test = pd.Series(["train 0", "new test"])
-        y_test = pd.Series(["ham", "spam"])
-
-        with self.assertRaisesRegex(ValueError, "duplicated messages"):
-            validate_training_split(X_train, X_test, y_train, y_test)
+    def test_split_rejects_application_overlap(self):
+        cleaned = validate_and_clean_data(valid_rows())
+        X = pd.concat([cleaned.loc[:, FEATURE_COLUMNS]] * 3, ignore_index=True)
+        y = pd.concat([cleaned["loan_status"]] * 3, ignore_index=True)
+        with self.assertRaisesRegex(ValueError, "duplicated applications"):
+            validate_training_split(X, X.copy(), y, y.copy())
 
 
 class EvaluationTests(unittest.TestCase):
-    def test_metrics_use_spam_as_the_positive_class(self):
+    def test_metrics_are_limited_to_the_four_required_scores(self):
         metrics = calculate_metrics(
-            ["ham", "ham", "spam", "spam"],
-            ["ham", "spam", "spam", "spam"],
+            ["Rejected", "Rejected", "Approved", "Approved"],
+            ["Rejected", "Approved", "Approved", "Approved"],
         )
-
         self.assertEqual(metrics["accuracy"], 0.75)
         self.assertEqual(metrics["precision"], 2 / 3)
         self.assertEqual(metrics["recall"], 1.0)
-        self.assertEqual(metrics["f1"], 0.8)
-        self.assertEqual(
-            set(metrics), {"accuracy", "precision", "recall", "f1"}
-        )
+        self.assertAlmostEqual(metrics["f1"], 0.8)
+        self.assertEqual(set(metrics), {"accuracy", "precision", "recall", "f1"})
 
-    def test_grid_search_uses_stratified_five_fold_cv_and_spam_f1(self):
-        pipeline = Pipeline([
-            ("tfidf", TfidfVectorizer()),
-            ("classifier", MultinomialNB()),
-        ])
+    def test_grid_search_uses_stratified_five_fold_f1(self):
+        pipeline = create_model_pipeline(
+            DecisionTreeClassifier(random_state=42), scale_numeric=False
+        )
         search = create_grid_search(
             pipeline,
-            {
-                "tfidf__ngram_range": [(1, 1), (1, 2)],
-                "classifier__alpha": [0.5, 1.0],
-            },
+            {"classifier__max_depth": [4, 6]},
         )
-
         self.assertEqual(search.refit, "f1")
         self.assertEqual(search.cv.n_splits, 5)
         self.assertTrue(search.cv.shuffle)
         self.assertEqual(search.cv.random_state, 42)
         self.assertEqual(
-            set(search.scoring),
-            {"accuracy", "precision", "recall", "f1"},
+            set(search.scoring), {"accuracy", "precision", "recall", "f1"}
         )
+
+    def test_both_model_pipelines_fit_structured_features(self):
+        cleaned = validate_and_clean_data(valid_rows())
+        X = cleaned.loc[:, FEATURE_COLUMNS]
+        y = cleaned["loan_status"]
+        for classifier, scale in (
+            (DecisionTreeClassifier(max_depth=3, random_state=42), False),
+            (RandomForestClassifier(n_estimators=10, random_state=42), False),
+        ):
+            with self.subTest(classifier=type(classifier).__name__):
+                model = create_model_pipeline(classifier, scale)
+                model.fit(X, y)
+                self.assertEqual(len(model.predict(X)), len(X))
 
 
 class StreamlitApplicationTests(unittest.TestCase):
@@ -116,41 +124,45 @@ class StreamlitApplicationTests(unittest.TestCase):
         app = AppTest.from_file(PROJECT_ROOT / "streamlit_app.py")
         return app.run(timeout=30)
 
-    def test_initial_page_renders_without_loading_a_prediction(self):
+    def test_initial_page_renders_model_comparison(self):
         app = self.run_app()
-
         self.assertFalse(app.exception)
-        self.assertEqual(app.title[0].value, "✉️ Message Spam Classifier")
+        self.assertEqual(app.title[0].value, "🏦 Loan Approval Prediction")
         self.assertEqual(len(app.metric), 0)
         self.assertEqual(len(app.dataframe), 1)
         self.assertEqual(
             list(app.dataframe[0].value.columns),
-            ["Model", "Accuracy", "Precision", "Recall", "F1"],
+            [
+                "Model",
+                "Accuracy",
+                "Precision",
+                "Recall",
+                "F1-score",
+            ],
         )
 
-    def test_empty_or_number_only_message_is_rejected(self):
-        for message in ("", "123 456 !!!"):
-            with self.subTest(message=message):
-                app = self.run_app()
-                app.text_area[0].input(message)
-                app.button[0].click()
-                app.run(timeout=30)
-
-                self.assertFalse(app.exception)
-                self.assertIn("containing some words", app.warning[0].value)
-                self.assertEqual(len(app.metric), 0)
-
-    def test_valid_message_displays_both_predictions_and_agreement(self):
+    def test_valid_application_displays_both_predictions(self):
         app = self.run_app()
-        app.text_area[0].input(
-            "Congratulations! You have won a free cash prize. Click now."
-        )
+        values = [
+            2,
+            5_000_000,
+            10_000_000,
+            10,
+            750,
+            5_000_000,
+            2_000_000,
+            5_000_000,
+            3_000_000,
+        ]
+        for widget, value in zip(app.number_input, values):
+            widget.set_value(value)
         app.button[0].click()
         app.run(timeout=30)
-
         self.assertFalse(app.exception)
-        self.assertEqual([metric.value for metric in app.metric], ["SPAM", "SPAM"])
-        self.assertIn("Both models agree", app.success[0].value)
+        self.assertEqual(len(app.metric), 2)
+        self.assertTrue(
+            all(metric.value in {"APPROVED", "REJECTED"} for metric in app.metric)
+        )
 
 
 if __name__ == "__main__":

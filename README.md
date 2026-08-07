@@ -1,126 +1,151 @@
-# Message Spam Classifier - Supervised Machine Learning
+# Loan Approval Prediction Using Supervised Machine Learning
 
-This project classifies messages as ham or spam using two supervised
-classification algorithms:
+This project predicts whether a loan application is **Approved** or **Rejected**
+using two supervised classification algorithms:
 
-- Multinomial Naive Bayes
-- Linear Support Vector Machine (SVM)
+- Decision Tree as an interpretable single-tree model
+- Random Forest as the primary nonlinear model
 
-Both models are trained and evaluated using the same cleaned training and test
-sets. Each model uses a leakage-safe TF-IDF pipeline and reproducible five-fold
-cross-validation to select its best configuration.
+Both models use the same validated data split and leakage-safe scikit-learn
+pipelines. Five-fold stratified cross-validation selects model configurations by
+Approved-class F1-score before each selected pipeline is evaluated once on the
+untouched test set.
+
+> **Educational use only:** the target records approval decisions, not borrower
+> default or repayment. This prototype must not be used for real lending
+> decisions.
 
 ## Project Structure
 
 ```text
-AI-spam-classifier-project/
+loan-approval-prediction/
 |-- data/
 |   |-- README.md
-|   |-- messages.csv
+|   |-- loan_approval_dataset.csv
 |   `-- processed/
 |-- models/
 |-- streamlit_app.py
 |-- src/
 |   |-- prepare_data.py
-|   |-- train_naive_bayes.py
-|   |-- train_svm.py
+|   |-- train_decision_tree.py
+|   |-- train_random_forest.py
 |   |-- compare_models.py
 |   |-- settings.py
-|   `-- text_processing.py
+|   `-- training_utils.py
 |-- tests/
 `-- requirements.txt
 ```
 
-The input file must be `data/messages.csv`. It must contain a message column
-and a label column. Labels may be written as `ham`/`spam` or `0`/`1`.
+## Dataset
+
+The CSV contains 4,269 applications and 13 columns. `loan_status` is the target,
+and `loan_id` is retained for traceability during validation but excluded from
+model features. The remaining 11 predictors contain applicant, loan, credit,
+and asset information.
+
+The source file contains no missing values or duplicate records. Its original
+headers and category values contain leading whitespace, which is normalized on
+load. Twenty-eight records have a `residential_assets_value` of `-100000`.
+Those values are reported as a quality warning and retained unchanged because
+the source does not explain whether they are errors or meaningful codes.
+
+See `data/README.md` for provenance, schema, class counts, integrity information,
+and limitations.
 
 ## Installation
 
-Install the required packages using the same Python interpreter that will run
-the project:
+Install the required packages using the Python interpreter that will run the
+project:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-## Run the Complete Workflow
+## Complete Workflow
 
-Run these commands from the project root in the following order:
+Run the following commands from the project root:
 
 ```bash
 python src/prepare_data.py
-python src/train_naive_bayes.py
-python src/train_svm.py
+python src/train_decision_tree.py
+python src/train_random_forest.py
 python src/compare_models.py
 python -m streamlit run streamlit_app.py
 ```
 
-The Streamlit interface provides two-model prediction, model-agreement status,
-the saved comparison table, and the comparison chart. To deploy it with
-Streamlit Community Cloud, push the repository and the four allowed model
-artifacts to GitHub, then select `streamlit_app.py` as the app entry point.
-
-The interface validates empty and oversized input, loads the two trusted model
-artifacts once per application process, reports whether the models agree, and
-handles missing or incompatible artifacts without exposing a debugger.
+The Streamlit interface collects all 11 model features, displays the prediction
+from each model, highlights model agreement, and shows the saved four-metric
+model-comparison results.
 
 ## Data Preparation
 
-`prepare_data.py` performs the following operations:
+`prepare_data.py`:
 
-1. Loads `data/messages.csv`.
-2. Normalizes ham/spam labels.
-3. Removes empty, invalid, conflicting, and duplicate messages.
-4. Cleans punctuation, numbers, and repeated whitespace.
-5. Creates a stratified 70/30 training and test split using random state 42.
-6. Verifies that every training class supports five-fold cross-validation.
-7. Checks that no cleaned message occurs in both training and test sets.
-8. Saves the shared text and label splits to `data/processed/`.
+1. Loads `data/loan_approval_dataset.csv`.
+2. Strips whitespace from headers and categorical values.
+3. Validates required columns, labels, categories, identifiers, and numeric
+   ranges.
+4. Reports negative residential-asset values without silently changing them.
+5. Removes exact duplicate applications and rejects conflicting labels.
+6. Excludes `loan_id` from the predictor matrix.
+7. Creates a stratified 70:30 train-test split using random state 42.
+8. Confirms no identical application occurs in both splits.
+9. Saves the untouched feature and label splits to `data/processed/`.
 
-## Feature Extraction and Model Selection
+## Preprocessing and Model Selection
 
-Both training scripts place TF-IDF feature extraction inside a scikit-learn
-Pipeline. GridSearchCV compares unigram features with unigram + bigram features
-using five-fold stratified cross-validation. Because TF-IDF is fitted separately
-inside every fold, the validation fold cannot influence its vocabulary or IDF
-weights.
+Preprocessing is fitted inside every model pipeline and every cross-validation
+fold:
 
-Naive Bayes also searches smoothing strength and whether to learn class priors.
-SVM uses LinearSVC and searches the regularization value and balanced/unbalanced
-class weights. The best configuration is selected by spam-class F1-score, then
-evaluated once on the untouched 30% test set.
+- Decision Tree and Random Forest pass numeric features through unchanged and
+  one-hot encode `education` and `self_employed`.
 
-## Model Evaluation
+GridSearchCV uses five-fold `StratifiedKFold` validation. It records accuracy,
+Approved-class precision, recall, and F1-score. F1-score is the selection metric
+because it balances false approvals and false rejections while accounting for
+the 62.2%/37.8% class distribution.
 
-Both classifiers are evaluated on the same unseen test set using:
+## Generated Results
 
-- Accuracy
-- Precision
-- Recall
-- F1-score
-- Confusion matrix
+Final performance on the untouched 1,281-row test set:
 
-The comparison step creates:
+| Model | Accuracy | Precision | Recall | F1-score |
+|---|---:|---:|---:|---:|
+| Random Forest | 98.44% | 98.26% | 99.25% | 98.75% |
+| Decision Tree | 98.05% | 98.01% | 98.87% | 98.44% |
 
+Random Forest produced 20 incorrect predictions: 14 rejected applications were
+predicted Approved and 6 approved applications were predicted Rejected.
+Decision Tree produced 25 incorrect predictions: 16 rejected applications were
+predicted Approved and 9 approved applications were predicted Rejected.
+
+The selected Decision Tree used unrestricted depth, a minimum leaf size of five,
+and no class weighting. The selected Random Forest used unrestricted depth, a
+minimum leaf size of one, and no class weighting.
+
+The training and comparison scripts create:
+
+- `models/decision_tree_model.joblib`
+- `models/random_forest_model.joblib`
+- `models/decision_tree_grid_search.csv`
+- `models/random_forest_grid_search.csv`
+- `models/decision_tree_training_summary.json`
+- `models/random_forest_training_summary.json`
+- `models/confusion_matrix_decision_tree.png`
+- `models/confusion_matrix_random_forest.png`
 - `models/comparison_table.csv`
 - `models/comparison_chart.png`
-- `models/confusion_matrix_nb.png`
-- `models/confusion_matrix_svm.png`
-- `models/naive_bayes_grid_search.csv`
-- `models/svm_grid_search.csv`
-- `models/naive_bayes_training_summary.json`
-- `models/svm_training_summary.json`
 
-The CSV table and figures can be included in the Results and Discussion
-sections of the assignment documentation.
+The high performance of the tree-based model must be interpreted cautiously.
+`cibil_score` is strongly associated with the target, and results from this
+single educational dataset should not be generalized to real applicants.
 
-The `data/processed/` directory and intermediate files in `models/` are ignored
-by Git. The two trained pipelines, comparison table, and comparison chart are
-allowed through `.gitignore` because the deployed web interface requires them.
-After retraining, commit those four deployment artifacts with the application.
-
-## Run the Tests
+## Testing
 
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+The tests cover schema and range validation, anomaly handling, split leakage,
+metric definitions, preprocessing pipelines, model-search configuration, and
+Streamlit inference.

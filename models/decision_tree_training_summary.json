@@ -1,0 +1,18 @@
+{
+  "model": "Decision Tree",
+  "cv_folds": 5,
+  "selection_metric": "f1",
+  "best_parameters": {
+    "classifier__class_weight": null,
+    "classifier__max_depth": null,
+    "classifier__min_samples_leaf": 5
+  },
+  "best_cross_validation_score": 0.9825604097308686,
+  "test_metrics": {
+    "accuracy": 0.9804839968774395,
+    "precision": 0.9800995024875622,
+    "recall": 0.9887076537013801,
+    "f1": 0.9843847595252967
+  },
+  "scikit_learn_version": "1.9.0"
+}

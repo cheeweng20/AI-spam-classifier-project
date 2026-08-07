@@ -23,8 +23,14 @@ tempCodeRunnerFile.py
 # Generated project artifacts
 data/processed/
 models/*
-!models/naive_bayes_model.joblib
-!models/svm_model.joblib
+!models/decision_tree_model.joblib
+!models/random_forest_model.joblib
+!models/decision_tree_grid_search.csv
+!models/random_forest_grid_search.csv
+!models/decision_tree_training_summary.json
+!models/random_forest_training_summary.json
+!models/confusion_matrix_decision_tree.png
+!models/confusion_matrix_random_forest.png
 !models/comparison_table.csv
 !models/comparison_chart.png
 tmp/

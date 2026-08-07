@@ -1,168 +1,211 @@
-"""
-Step 1: Prepare the dataset.
-Loads data/messages.csv, cleans it, creates a shared train/test split, and
-saves the text and labels to data/processed/ so both classifiers use the same
-data. Feature extraction is fitted inside cross-validation in the training
-scripts to prevent validation-data leakage.
+"""Prepare and validate the loan approval dataset.
+
+The script saves an untouched-feature train/test split. Encoding and scaling are
+performed inside each fitted model pipeline so validation and test data cannot
+influence preprocessing.
 
 Usage:
     python src/prepare_data.py
 """
 
-import re
+import json
 
 import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
+
 from settings import (
+    ALLOWED_CATEGORIES,
     CV_FOLDS,
     DATA_PATH,
     EXPECTED_LABELS,
+    FEATURE_COLUMNS,
+    ID_COLUMN,
+    NUMERIC_FEATURES,
     PROCESSED_DATA_DIR,
     RANDOM_STATE,
+    TARGET_COLUMN,
     TEST_SIZE,
 )
-from text_processing import clean_text
 
 
-def load_message_data(path):
-    """
-    Load the message dataset from CSV.
-
-    The expected columns are message and label, but common alternative column
-    names are supported to make format errors easier to diagnose.
-    """
+def load_loan_data(path):
+    """Load the CSV and normalize whitespace in headers and text values."""
     try:
         try:
-            data = pd.read_csv(path, encoding="utf-8-sig")
+            data = pd.read_csv(path, encoding="utf-8-sig", skipinitialspace=True)
         except UnicodeDecodeError:
-            data = pd.read_csv(path, encoding="windows-1252")
+            data = pd.read_csv(path, encoding="windows-1252", skipinitialspace=True)
     except pd.errors.EmptyDataError as exception:
         raise ValueError(f"The dataset is empty: {path}") from exception
     except pd.errors.ParserError as exception:
         raise ValueError(f"The dataset is not a valid CSV file: {path}") from exception
 
-    normalized_columns = {
-        re.sub(r"[^a-z0-9]", "", str(column).lower()): column
-        for column in data.columns
+    data.columns = data.columns.astype(str).str.strip()
+    for column in data.select_dtypes(include=["object", "string"]).columns:
+        data[column] = data[column].astype("string").str.strip()
+    return data
+
+
+def _normalize_categories(data):
+    """Normalize the known categorical and target labels."""
+    education_map = {
+        "graduate": "Graduate",
+        "not graduate": "Not Graduate",
     }
-    text_col_candidates = ["message", "text", "body", "content"]
-    label_col_candidates = [
-        "label",
-        "category",
-        "spamham",
-        "spam",
-        "class",
-        "target",
-        "v1",
-    ]
+    employment_map = {"yes": "Yes", "no": "No"}
+    status_map = {"approved": "Approved", "rejected": "Rejected"}
 
-    text_col = next(
-        (normalized_columns[c] for c in text_col_candidates if c in normalized_columns),
-        None,
+    data["education"] = (
+        data["education"].astype("string").str.strip().str.lower().map(education_map)
     )
-    label_col = next(
-        (
-            normalized_columns[c]
-            for c in label_col_candidates
-            if c in normalized_columns
-        ),
-        None,
+    data["self_employed"] = (
+        data["self_employed"]
+        .astype("string")
+        .str.strip()
+        .str.lower()
+        .map(employment_map)
     )
-
-    if text_col is not None and label_col is not None:
-        return pd.DataFrame({
-            "label": data[label_col],
-            "text": data[text_col],
-        })
-
-    raise ValueError(
-        f"Could not auto-detect message and label columns.\n"
-        f"Actual columns in your file: {list(data.columns)}\n"
-        "Expected CSV columns such as message,label."
+    data[TARGET_COLUMN] = (
+        data[TARGET_COLUMN]
+        .astype("string")
+        .str.strip()
+        .str.lower()
+        .map(status_map)
     )
 
 
-def validate_and_clean_data(data, dataset):
-    """Normalize labels/text and reject unusable or ambiguous training data."""
-    required_columns = {"label", "text"}
+def validate_and_clean_data(data):
+    """Validate schema and values while preserving documented source anomalies."""
+    required_columns = {
+        ID_COLUMN,
+        TARGET_COLUMN,
+        *FEATURE_COLUMNS,
+    }
     missing_columns = required_columns - set(data.columns)
     if missing_columns:
         raise ValueError(
-            f"The {dataset} dataset is missing columns: {sorted(missing_columns)}."
+            f"The loan dataset is missing columns: {sorted(missing_columns)}."
         )
 
-    labels = data["label"].astype("string").str.lower().str.strip()
-    labels = labels.replace({
-        "1": "spam", "1.0": "spam", "true": "spam", "yes": "spam",
-        "0": "ham", "0.0": "ham", "false": "ham", "no": "ham",
-    })
-    raw_text = data["text"].fillna("").astype("string").str.strip()
-    spreadsheet_errors = {
-        "#div/0!",
-        "#error!",
-        "#n/a",
-        "#name?",
-        "#null!",
-        "#num!",
-        "#ref!",
-        "#value!",
+    cleaned = data[[ID_COLUMN, *FEATURE_COLUMNS, TARGET_COLUMN]].copy()
+    original_rows = len(cleaned)
+
+    numeric_columns = [ID_COLUMN, *NUMERIC_FEATURES]
+    for column in numeric_columns:
+        cleaned[column] = pd.to_numeric(cleaned[column], errors="coerce")
+    if cleaned[numeric_columns].isna().any().any():
+        invalid = cleaned[numeric_columns].isna().sum()
+        invalid = invalid[invalid > 0].to_dict()
+        raise ValueError(f"Missing or non-numeric values found: {invalid}.")
+
+    _normalize_categories(cleaned)
+    for column, allowed in ALLOWED_CATEGORIES.items():
+        observed = set(cleaned[column].dropna())
+        if cleaned[column].isna().any() or not observed.issubset(allowed):
+            raise ValueError(
+                f"Unsupported or missing values in {column}. Expected {sorted(allowed)}."
+            )
+    observed_labels = set(cleaned[TARGET_COLUMN].dropna())
+    if cleaned[TARGET_COLUMN].isna().any() or observed_labels != EXPECTED_LABELS:
+        raise ValueError(
+            "loan_status must contain both Approved and Rejected labels only."
+        )
+
+    if cleaned[ID_COLUMN].duplicated().any():
+        duplicate_ids = cleaned.loc[
+            cleaned[ID_COLUMN].duplicated(keep=False), ID_COLUMN
+        ].tolist()
+        raise ValueError(f"Duplicate loan_id values found: {duplicate_ids[:10]}.")
+    if not (cleaned[ID_COLUMN] % 1 == 0).all():
+        raise ValueError("loan_id values must be whole numbers.")
+    cleaned[ID_COLUMN] = cleaned[ID_COLUMN].astype("int64")
+
+    integer_columns = ("no_of_dependents", "loan_term", "cibil_score")
+    for column in integer_columns:
+        if not (cleaned[column] % 1 == 0).all():
+            raise ValueError(f"{column} values must be whole numbers.")
+        cleaned[column] = cleaned[column].astype("int64")
+
+    if not cleaned["no_of_dependents"].between(0, 20).all():
+        raise ValueError("no_of_dependents must be between 0 and 20.")
+    if not cleaned["cibil_score"].between(300, 900).all():
+        raise ValueError("cibil_score must be between 300 and 900.")
+    if (cleaned["income_annum"] <= 0).any():
+        raise ValueError("income_annum must be greater than zero.")
+    if (cleaned["loan_amount"] <= 0).any():
+        raise ValueError("loan_amount must be greater than zero.")
+    if (cleaned["loan_term"] <= 0).any():
+        raise ValueError("loan_term must be greater than zero.")
+
+    strictly_non_negative = (
+        "commercial_assets_value",
+        "luxury_assets_value",
+        "bank_asset_value",
+    )
+    negative_counts = {
+        column: int((cleaned[column] < 0).sum())
+        for column in strictly_non_negative
     }
-    usable_text = ~raw_text.str.lower().isin(spreadsheet_errors)
-    cleaned = pd.DataFrame({
-        "label": labels[usable_text],
-        "text": raw_text[usable_text].map(clean_text),
-    }).dropna(subset=["label"])
-    cleaned = cleaned[cleaned["text"].str.len() > 0]
+    if any(negative_counts.values()):
+        raise ValueError(f"Unexpected negative asset values found: {negative_counts}.")
 
-    unknown_labels = sorted(set(cleaned["label"]) - EXPECTED_LABELS)
-    if unknown_labels:
+    duplicate_subset = [*FEATURE_COLUMNS, TARGET_COLUMN]
+    conflicting = cleaned.groupby(list(FEATURE_COLUMNS), dropna=False)[
+        TARGET_COLUMN
+    ].nunique()
+    if (conflicting > 1).any():
         raise ValueError(
-            f"Unsupported label values in the {dataset} dataset: "
-            f"{unknown_labels[:10]}. Expected ham/spam or 0/1."
+            "Identical applications with conflicting loan_status labels were found."
         )
+    cleaned = cleaned.drop_duplicates(subset=duplicate_subset).reset_index(drop=True)
 
-    conflicting = cleaned.groupby("text")["label"].nunique()
-    conflicting = conflicting[conflicting > 1]
-    if not conflicting.empty:
-        raise ValueError(
-            f"The {dataset} dataset contains {len(conflicting)} messages with "
-            "conflicting ham/spam labels."
+    residential_negative_count = int(
+        (cleaned["residential_assets_value"] < 0).sum()
+    )
+    warnings = []
+    if residential_negative_count:
+        warnings.append(
+            f"{residential_negative_count} rows have negative "
+            "residential_assets_value; retained unchanged because the source does "
+            "not document whether -100000 is an error or a meaningful code."
         )
-
-    cleaned = cleaned.drop_duplicates(subset="text").reset_index(drop=True)
-    label_counts = cleaned["label"].value_counts()
-    if set(label_counts.index) != EXPECTED_LABELS or label_counts.min() < 2:
-        raise ValueError(
-            f"The {dataset} dataset needs at least two usable ham and spam messages. "
-            f"Found: {label_counts.to_dict()}."
-        )
-
+    cleaned.attrs["quality_warnings"] = warnings
+    cleaned.attrs["removed_duplicate_rows"] = original_rows - len(cleaned)
     return cleaned
 
 
 def validate_training_split(X_train, X_test, y_train, y_test):
-    """Reject a split that cannot support leakage-safe five-fold validation."""
+    """Reject incomplete, unusable, or overlapping stored data splits."""
     if len(X_train) != len(y_train) or len(X_test) != len(y_test):
-        raise ValueError("Text and label row counts do not match after splitting.")
+        raise ValueError("Feature and label row counts do not match after splitting.")
+    if tuple(X_train.columns) != FEATURE_COLUMNS:
+        raise ValueError("Training features do not match the expected schema.")
+    if tuple(X_test.columns) != FEATURE_COLUMNS:
+        raise ValueError("Test features do not match the expected schema.")
 
-    train_counts = y_train.value_counts()
-    test_counts = y_test.value_counts()
+    train_counts = pd.Series(y_train).value_counts()
+    test_counts = pd.Series(y_test).value_counts()
     if set(train_counts.index) != EXPECTED_LABELS:
-        raise ValueError("The training split must contain both ham and spam.")
+        raise ValueError("The training split must contain Approved and Rejected.")
     if set(test_counts.index) != EXPECTED_LABELS:
-        raise ValueError("The test split must contain both ham and spam.")
+        raise ValueError("The test split must contain Approved and Rejected.")
     if train_counts.min() < CV_FOLDS:
         raise ValueError(
-            f"Each training class needs at least {CV_FOLDS} messages for "
+            f"Each training class needs at least {CV_FOLDS} rows for "
             f"{CV_FOLDS}-fold cross-validation. Found: {train_counts.to_dict()}."
         )
 
-    overlap = set(X_train).intersection(X_test)
+    train_hashes = set(
+        pd.util.hash_pandas_object(X_train, index=False).astype("uint64")
+    )
+    test_hashes = set(
+        pd.util.hash_pandas_object(X_test, index=False).astype("uint64")
+    )
+    overlap = train_hashes.intersection(test_hashes)
     if overlap:
         raise ValueError(
-            f"Detected {len(overlap)} duplicated messages across the training "
-            "and test sets. Reprepare and deduplicate the dataset."
+            f"Detected {len(overlap)} duplicated applications across train and test."
         )
 
 
@@ -170,21 +213,20 @@ def main():
     if not DATA_PATH.is_file():
         raise FileNotFoundError(
             f"Training file not found: {DATA_PATH}\n"
-            "Put messages.csv in the data directory."
+            "Put loan_approval_dataset.csv in the data directory."
         )
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading message data from {DATA_PATH} ...")
-    raw_data = load_message_data(DATA_PATH)
-    data = validate_and_clean_data(raw_data, "message")
-    removed_count = len(raw_data) - len(data)
-    print(f"Loaded {len(raw_data)} rows; using {len(data)} unique messages "
-          f"({removed_count} empty/duplicate rows removed).")
-    print(data["label"].value_counts())
+    print(f"Loading loan data from {DATA_PATH} ...")
+    raw_data = load_loan_data(DATA_PATH)
+    data = validate_and_clean_data(raw_data)
+    print(f"Loaded {len(raw_data):,} rows; using {len(data):,} validated rows.")
+    print(data[TARGET_COLUMN].value_counts())
+    for warning in data.attrs.get("quality_warnings", []):
+        print(f"Data quality warning: {warning}")
 
-    X = data["text"]
-    y = data["label"]
-
+    X = data.loc[:, FEATURE_COLUMNS]
+    y = data[TARGET_COLUMN]
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -194,14 +236,37 @@ def main():
     )
     validate_training_split(X_train, X_test, y_train, y_test)
 
-    print(f"Training set: {len(X_train)} messages")
-    print(f"Test set: {len(X_test)} messages")
+    artifacts = {
+        "X_train.joblib": X_train,
+        "X_test.joblib": X_test,
+        "y_train.joblib": y_train,
+        "y_test.joblib": y_test,
+    }
+    for name, value in artifacts.items():
+        joblib.dump(value, PROCESSED_DATA_DIR / name)
 
-    joblib.dump(X_train, PROCESSED_DATA_DIR / "X_train.joblib")
-    joblib.dump(X_test, PROCESSED_DATA_DIR / "X_test.joblib")
-    joblib.dump(y_train, PROCESSED_DATA_DIR / "y_train.joblib")
-    joblib.dump(y_test, PROCESSED_DATA_DIR / "y_test.joblib")
-    print(f"\nDone. Processed data saved to {PROCESSED_DATA_DIR}/")
+    summary = {
+        "source_rows": len(raw_data),
+        "validated_rows": len(data),
+        "training_rows": len(X_train),
+        "test_rows": len(X_test),
+        "class_counts": {
+            str(label): int(count)
+            for label, count in data[TARGET_COLUMN].value_counts().items()
+        },
+        "negative_residential_asset_rows": int(
+            (data["residential_assets_value"] < 0).sum()
+        ),
+        "quality_warnings": data.attrs.get("quality_warnings", []),
+    }
+    with (PROCESSED_DATA_DIR / "data_summary.json").open(
+        "w", encoding="utf-8"
+    ) as file:
+        json.dump(summary, file, indent=2)
+
+    print(f"Training set: {len(X_train):,} applications")
+    print(f"Test set: {len(X_test):,} applications")
+    print(f"Processed data saved to {PROCESSED_DATA_DIR}/")
 
 
 if __name__ == "__main__":
