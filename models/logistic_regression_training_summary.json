@@ -1,0 +1,17 @@
+{
+  "model": "Logistic Regression",
+  "cv_folds": 5,
+  "selection_metric": "f1",
+  "best_parameters": {
+    "classifier__C": 0.01,
+    "classifier__class_weight": "balanced"
+  },
+  "best_cross_validation_score": 0.931522010573785,
+  "test_metrics": {
+    "accuracy": 0.9445745511319282,
+    "precision": 0.9827127659574468,
+    "recall": 0.9272271016311167,
+    "f1": 0.9541639767591995
+  },
+  "scikit_learn_version": "1.9.0"
+}

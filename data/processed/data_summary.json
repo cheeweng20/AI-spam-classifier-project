@@ -1,0 +1,26 @@
+{
+  "source_rows": 4269,
+  "validated_rows": 4269,
+  "training_rows": 2988,
+  "test_rows": 1281,
+  "class_counts": {
+    "Approved": 2656,
+    "Rejected": 1613
+  },
+  "selected_features": [
+    "income_annum",
+    "loan_amount",
+    "loan_term",
+    "cibil_score"
+  ],
+  "excluded_source_features": [
+    "no_of_dependents",
+    "education",
+    "self_employed",
+    "residential_assets_value",
+    "commercial_assets_value",
+    "luxury_assets_value",
+    "bank_asset_value"
+  ],
+  "quality_warnings": []
+}
