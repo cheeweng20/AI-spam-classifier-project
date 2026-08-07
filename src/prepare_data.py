@@ -15,9 +15,9 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from settings import (
-    ALLOWED_CATEGORIES,
     CV_FOLDS,
     DATA_PATH,
+    EXCLUDED_SOURCE_FEATURES,
     EXPECTED_LABELS,
     FEATURE_COLUMNS,
     ID_COLUMN,
@@ -47,25 +47,9 @@ def load_loan_data(path):
     return data
 
 
-def _normalize_categories(data):
-    """Normalize the known categorical and target labels."""
-    education_map = {
-        "graduate": "Graduate",
-        "not graduate": "Not Graduate",
-    }
-    employment_map = {"yes": "Yes", "no": "No"}
+def _normalize_target(data):
+    """Normalize the two target labels."""
     status_map = {"approved": "Approved", "rejected": "Rejected"}
-
-    data["education"] = (
-        data["education"].astype("string").str.strip().str.lower().map(education_map)
-    )
-    data["self_employed"] = (
-        data["self_employed"]
-        .astype("string")
-        .str.strip()
-        .str.lower()
-        .map(employment_map)
-    )
     data[TARGET_COLUMN] = (
         data[TARGET_COLUMN]
         .astype("string")
@@ -99,13 +83,7 @@ def validate_and_clean_data(data):
         invalid = invalid[invalid > 0].to_dict()
         raise ValueError(f"Missing or non-numeric values found: {invalid}.")
 
-    _normalize_categories(cleaned)
-    for column, allowed in ALLOWED_CATEGORIES.items():
-        observed = set(cleaned[column].dropna())
-        if cleaned[column].isna().any() or not observed.issubset(allowed):
-            raise ValueError(
-                f"Unsupported or missing values in {column}. Expected {sorted(allowed)}."
-            )
+    _normalize_target(cleaned)
     observed_labels = set(cleaned[TARGET_COLUMN].dropna())
     if cleaned[TARGET_COLUMN].isna().any() or observed_labels != EXPECTED_LABELS:
         raise ValueError(
@@ -121,14 +99,12 @@ def validate_and_clean_data(data):
         raise ValueError("loan_id values must be whole numbers.")
     cleaned[ID_COLUMN] = cleaned[ID_COLUMN].astype("int64")
 
-    integer_columns = ("no_of_dependents", "loan_term", "cibil_score")
+    integer_columns = ("loan_term", "cibil_score")
     for column in integer_columns:
         if not (cleaned[column] % 1 == 0).all():
             raise ValueError(f"{column} values must be whole numbers.")
         cleaned[column] = cleaned[column].astype("int64")
 
-    if not cleaned["no_of_dependents"].between(0, 20).all():
-        raise ValueError("no_of_dependents must be between 0 and 20.")
     if not cleaned["cibil_score"].between(300, 900).all():
         raise ValueError("cibil_score must be between 300 and 900.")
     if (cleaned["income_annum"] <= 0).any():
@@ -137,18 +113,6 @@ def validate_and_clean_data(data):
         raise ValueError("loan_amount must be greater than zero.")
     if (cleaned["loan_term"] <= 0).any():
         raise ValueError("loan_term must be greater than zero.")
-
-    strictly_non_negative = (
-        "commercial_assets_value",
-        "luxury_assets_value",
-        "bank_asset_value",
-    )
-    negative_counts = {
-        column: int((cleaned[column] < 0).sum())
-        for column in strictly_non_negative
-    }
-    if any(negative_counts.values()):
-        raise ValueError(f"Unexpected negative asset values found: {negative_counts}.")
 
     duplicate_subset = [*FEATURE_COLUMNS, TARGET_COLUMN]
     conflicting = cleaned.groupby(list(FEATURE_COLUMNS), dropna=False)[
@@ -160,18 +124,11 @@ def validate_and_clean_data(data):
         )
     cleaned = cleaned.drop_duplicates(subset=duplicate_subset).reset_index(drop=True)
 
-    residential_negative_count = int(
-        (cleaned["residential_assets_value"] < 0).sum()
-    )
-    warnings = []
-    if residential_negative_count:
-        warnings.append(
-            f"{residential_negative_count} rows have negative "
-            "residential_assets_value; retained unchanged because the source does "
-            "not document whether -100000 is an error or a meaningful code."
-        )
-    cleaned.attrs["quality_warnings"] = warnings
+    cleaned.attrs["quality_warnings"] = []
     cleaned.attrs["removed_duplicate_rows"] = original_rows - len(cleaned)
+    cleaned.attrs["excluded_source_features"] = [
+        column for column in EXCLUDED_SOURCE_FEATURES if column in data.columns
+    ]
     return cleaned
 
 
@@ -222,8 +179,15 @@ def main():
     data = validate_and_clean_data(raw_data)
     print(f"Loaded {len(raw_data):,} rows; using {len(data):,} validated rows.")
     print(data[TARGET_COLUMN].value_counts())
-    for warning in data.attrs.get("quality_warnings", []):
-        print(f"Data quality warning: {warning}")
+    print(
+        "Selected model inputs: "
+        f"{', '.join(FEATURE_COLUMNS)}"
+    )
+    if data.attrs.get("excluded_source_features"):
+        print(
+            "Excluded low-importance source features: "
+            f"{', '.join(data.attrs['excluded_source_features'])}"
+        )
 
     X = data.loc[:, FEATURE_COLUMNS]
     y = data[TARGET_COLUMN]
@@ -254,8 +218,9 @@ def main():
             str(label): int(count)
             for label, count in data[TARGET_COLUMN].value_counts().items()
         },
-        "negative_residential_asset_rows": int(
-            (data["residential_assets_value"] < 0).sum()
+        "selected_features": list(FEATURE_COLUMNS),
+        "excluded_source_features": data.attrs.get(
+            "excluded_source_features", []
         ),
         "quality_warnings": data.attrs.get("quality_warnings", []),
     }

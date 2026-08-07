@@ -44,14 +44,37 @@ learning demonstration but not for operational lending decisions.
   strips them before validation.
 - All `loan_id` values are unique, and the identifier is never used as a model
   feature.
-- Twenty-eight rows contain `residential_assets_value = -100000`. The pipeline
-  reports these records but preserves them because the source does not state
-  whether this value is erroneous or coded information.
+- Twenty-eight rows contain `residential_assets_value = -100000`. This anomaly
+  remains documented in the original CSV, but the asset column is not used by
+  the final models.
 - No imputation or SMOTE is applied. The dataset contains no missing values, and
   its class imbalance is moderate. Stratification and precision, recall, and
   F1-score are used instead.
 - `cibil_score` is exceptionally predictive of `loan_status`. This limitation
   must be discussed when interpreting high model scores.
+
+## Selected model inputs
+
+Reduced-input testing selected four required model features:
+
+- `income_annum`
+- `loan_amount`
+- `loan_term`
+- `cibil_score`
+
+The following source columns are optional for descriptive analysis and excluded
+from model training and the Streamlit form:
+
+- `no_of_dependents`
+- `education`
+- `self_employed`
+- `residential_assets_value`
+- `commercial_assets_value`
+- `luxury_assets_value`
+- `bank_asset_value`
+
+`loan_id` is an identifier, while `loan_status` is the prediction target; neither
+is a model input.
 
 ## Integrity information
 

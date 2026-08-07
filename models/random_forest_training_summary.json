@@ -7,12 +7,12 @@
     "classifier__max_depth": null,
     "classifier__min_samples_leaf": 1
   },
-  "best_cross_validation_score": 0.9803619376818432,
+  "best_cross_validation_score": 0.9841981366553977,
   "test_metrics": {
-    "accuracy": 0.9843871975019516,
-    "precision": 0.9826086956521739,
-    "recall": 0.9924717691342535,
-    "f1": 0.9875156054931336
+    "accuracy": 0.9875097580015613,
+    "precision": 0.9850931677018634,
+    "recall": 0.9949811794228356,
+    "f1": 0.9900124843945068
   },
   "scikit_learn_version": "1.9.0"
 }

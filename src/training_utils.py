@@ -96,15 +96,19 @@ def load_test_data(processed_dir):
 def create_preprocessor(scale_numeric):
     """Create feature-aware preprocessing fitted only inside model training."""
     numeric_transformer = StandardScaler() if scale_numeric else "passthrough"
-    return ColumnTransformer(
-        transformers=[
-            ("numeric", numeric_transformer, list(NUMERIC_FEATURES)),
+    transformers = [
+        ("numeric", numeric_transformer, list(NUMERIC_FEATURES)),
+    ]
+    if CATEGORICAL_FEATURES:
+        transformers.append(
             (
                 "categorical",
                 OneHotEncoder(handle_unknown="ignore", sparse_output=False),
                 list(CATEGORICAL_FEATURES),
-            ),
-        ],
+            )
+        )
+    return ColumnTransformer(
+        transformers=transformers,
         remainder="drop",
     )
 

@@ -44,13 +44,14 @@ def valid_rows():
 
 
 class DataValidationTests(unittest.TestCase):
-    def test_validation_normalizes_categories_and_preserves_documented_anomaly(self):
+    def test_validation_selects_only_the_four_required_features(self):
         cleaned = validate_and_clean_data(valid_rows())
-        self.assertEqual(list(cleaned["education"]), [
-            "Graduate", "Not Graduate", "Graduate", "Not Graduate"
-        ])
-        self.assertEqual(cleaned.loc[0, "residential_assets_value"], -100_000)
-        self.assertIn("negative", cleaned.attrs["quality_warnings"][0])
+        self.assertEqual(
+            list(cleaned.columns),
+            ["loan_id", *FEATURE_COLUMNS, "loan_status"],
+        )
+        self.assertNotIn("education", cleaned.columns)
+        self.assertNotIn("residential_assets_value", cleaned.columns)
 
     def test_validation_rejects_missing_column(self):
         data = valid_rows().drop(columns="cibil_score")
@@ -63,11 +64,18 @@ class DataValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate loan_id"):
             validate_and_clean_data(data)
 
-    def test_validation_rejects_unknown_category(self):
-        data = valid_rows()
-        data.loc[0, "education"] = "Unknown"
-        with self.assertRaisesRegex(ValueError, "Unsupported or missing"):
-            validate_and_clean_data(data)
+    def test_validation_does_not_require_optional_source_features(self):
+        optional = [
+            "no_of_dependents",
+            "education",
+            "self_employed",
+            "residential_assets_value",
+            "commercial_assets_value",
+            "luxury_assets_value",
+            "bank_asset_value",
+        ]
+        cleaned = validate_and_clean_data(valid_rows().drop(columns=optional))
+        self.assertEqual(tuple(cleaned.loc[:, FEATURE_COLUMNS].columns), FEATURE_COLUMNS)
 
     def test_split_rejects_application_overlap(self):
         cleaned = validate_and_clean_data(valid_rows())
@@ -144,15 +152,10 @@ class StreamlitApplicationTests(unittest.TestCase):
     def test_valid_application_displays_both_predictions(self):
         app = self.run_app()
         values = [
-            2,
             5_000_000,
+            750,
             10_000_000,
             10,
-            750,
-            5_000_000,
-            2_000_000,
-            5_000_000,
-            3_000_000,
         ]
         for widget, value in zip(app.number_input, values):
             widget.set_value(value)

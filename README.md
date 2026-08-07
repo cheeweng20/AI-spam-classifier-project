@@ -40,14 +40,13 @@ loan-approval-prediction/
 
 The CSV contains 4,269 applications and 13 columns. `loan_status` is the target,
 and `loan_id` is retained for traceability during validation but excluded from
-model features. The remaining 11 predictors contain applicant, loan, credit,
-and asset information.
+model features. Feature-importance and reduced-input testing selected four core
+predictors: `income_annum`, `loan_amount`, `loan_term`, and `cibil_score`.
 
 The source file contains no missing values or duplicate records. Its original
 headers and category values contain leading whitespace, which is normalized on
-load. Twenty-eight records have a `residential_assets_value` of `-100000`.
-Those values are reported as a quality warning and retained unchanged because
-the source does not explain whether they are errors or meaningful codes.
+load. Twenty-eight records have a `residential_assets_value` of `-100000`; that
+source column is documented but excluded from the trained models.
 
 See `data/README.md` for provenance, schema, class counts, integrity information,
 and limitations.
@@ -73,9 +72,9 @@ python src/compare_models.py
 python -m streamlit run streamlit_app.py
 ```
 
-The Streamlit interface collects all 11 model features, displays the prediction
-from each model, highlights model agreement, and shows the saved four-metric
-model-comparison results.
+The Streamlit interface collects the four selected model features, displays the
+prediction from each model, highlights model agreement, and shows the saved
+four-metric model-comparison results.
 
 ## Data Preparation
 
@@ -83,22 +82,18 @@ model-comparison results.
 
 1. Loads `data/loan_approval_dataset.csv`.
 2. Strips whitespace from headers and categorical values.
-3. Validates required columns, labels, categories, identifiers, and numeric
-   ranges.
-4. Reports negative residential-asset values without silently changing them.
+3. Validates required columns, labels, identifiers, and numeric ranges.
+4. Selects annual income, loan amount, loan term, and CIBIL score.
 5. Removes exact duplicate applications and rejects conflicting labels.
-6. Excludes `loan_id` from the predictor matrix.
+6. Excludes `loan_id` and the seven low-importance source features.
 7. Creates a stratified 70:30 train-test split using random state 42.
 8. Confirms no identical application occurs in both splits.
-9. Saves the untouched feature and label splits to `data/processed/`.
+9. Saves the four-feature data and labels to `data/processed/`.
 
 ## Preprocessing and Model Selection
 
-Preprocessing is fitted inside every model pipeline and every cross-validation
-fold:
-
-- Decision Tree and Random Forest pass numeric features through unchanged and
-  one-hot encode `education` and `self_employed`.
+The four selected inputs are numeric. Decision Tree and Random Forest pass them
+through unchanged inside each model pipeline and cross-validation fold.
 
 GridSearchCV uses five-fold `StratifiedKFold` validation. It records accuracy,
 Approved-class precision, recall, and F1-score. F1-score is the selection metric
@@ -111,16 +106,16 @@ Final performance on the untouched 1,281-row test set:
 
 | Model | Accuracy | Precision | Recall | F1-score |
 |---|---:|---:|---:|---:|
-| Random Forest | 98.44% | 98.26% | 99.25% | 98.75% |
-| Decision Tree | 98.05% | 98.01% | 98.87% | 98.44% |
+| Random Forest | 98.75% | 98.51% | 99.50% | 99.00% |
+| Decision Tree | 98.28% | 98.14% | 99.12% | 98.63% |
 
-Random Forest produced 20 incorrect predictions: 14 rejected applications were
-predicted Approved and 6 approved applications were predicted Rejected.
-Decision Tree produced 25 incorrect predictions: 16 rejected applications were
-predicted Approved and 9 approved applications were predicted Rejected.
+Random Forest produced 16 incorrect predictions: 12 rejected applications were
+predicted Approved and 4 approved applications were predicted Rejected.
+Decision Tree produced 22 incorrect predictions: 15 rejected applications were
+predicted Approved and 7 approved applications were predicted Rejected.
 
-The selected Decision Tree used unrestricted depth, a minimum leaf size of five,
-and no class weighting. The selected Random Forest used unrestricted depth, a
+The selected Decision Tree used depth 10, a minimum leaf size of five, and
+balanced class weighting. The selected Random Forest used unrestricted depth, a
 minimum leaf size of one, and no class weighting.
 
 The training and comparison scripts create:
@@ -146,6 +141,6 @@ single educational dataset should not be generalized to real applicants.
 python -m unittest discover -s tests -v
 ```
 
-The tests cover schema and range validation, anomaly handling, split leakage,
-metric definitions, preprocessing pipelines, model-search configuration, and
-Streamlit inference.
+The tests cover the four-feature schema, range validation, split leakage, metric
+definitions, model pipelines, model-search configuration, and Streamlit
+inference.

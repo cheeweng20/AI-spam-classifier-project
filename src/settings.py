@@ -17,35 +17,20 @@ TARGET_COLUMN = "loan_status"
 EXPECTED_LABELS = frozenset({"Approved", "Rejected"})
 
 NUMERIC_FEATURES = (
-    "no_of_dependents",
     "income_annum",
     "loan_amount",
     "loan_term",
     "cibil_score",
-    "residential_assets_value",
-    "commercial_assets_value",
-    "luxury_assets_value",
-    "bank_asset_value",
 )
-CATEGORICAL_FEATURES = (
-    "education",
-    "self_employed",
-)
-FEATURE_COLUMNS = (
-    "no_of_dependents",
-    "education",
-    "self_employed",
-    "income_annum",
-    "loan_amount",
-    "loan_term",
-    "cibil_score",
-    "residential_assets_value",
-    "commercial_assets_value",
-    "luxury_assets_value",
-    "bank_asset_value",
-)
+CATEGORICAL_FEATURES = ()
+FEATURE_COLUMNS = NUMERIC_FEATURES
 
-ALLOWED_CATEGORIES = {
-    "education": frozenset({"Graduate", "Not Graduate"}),
-    "self_employed": frozenset({"Yes", "No"}),
-}
+EXCLUDED_SOURCE_FEATURES = (
+    "no_of_dependents",
+    "education",
+    "self_employed",
+    "residential_assets_value",
+    "commercial_assets_value",
+    "luxury_assets_value",
+    "bank_asset_value",
+)
