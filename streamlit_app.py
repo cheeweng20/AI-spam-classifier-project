@@ -12,7 +12,7 @@ from src.settings import FEATURE_COLUMNS, MODELS_DIR
 
 
 MODEL_PATHS = {
-    "Decision Tree": MODELS_DIR / "decision_tree_model.joblib",
+    "Logistic Regression": MODELS_DIR / "logistic_regression_model.joblib",
     "Random Forest": MODELS_DIR / "random_forest_model.joblib",
 }
 COMPARISON_TABLE_PATH = MODELS_DIR / "comparison_table.csv"
@@ -81,8 +81,8 @@ st.set_page_config(
 
 st.title("🏦 Loan Approval Prediction")
 st.write(
-    "Enter four core financial and loan values to compare predictions from "
-    "Decision Tree and Random Forest."
+    "Enter an applicant's financial and loan information to compare predictions "
+    "from Logistic Regression and Random Forest."
 )
 st.info(
     "Educational demonstration only. This prototype predicts patterns in the "
@@ -90,9 +90,18 @@ st.info(
 )
 
 with st.form("loan_application_form"):
-    applicant_column, loan_column = st.columns(2)
+    applicant_column, loan_column, assets_column = st.columns(3)
     with applicant_column:
         st.subheader("Applicant")
+        no_of_dependents = st.number_input(
+            "Number of dependents", min_value=0, max_value=20, value=2, step=1
+        )
+        education = st.selectbox(
+            "Education", options=["Graduate", "Not Graduate"]
+        )
+        self_employed = st.selectbox(
+            "Self-employed", options=["No", "Yes"]
+        )
         income_annum = st.number_input(
             "Annual income",
             min_value=100_000,
@@ -100,9 +109,6 @@ with st.form("loan_application_form"):
             value=5_000_000,
             step=100_000,
             help="Use the same monetary units as the training dataset.",
-        )
-        cibil_score = st.number_input(
-            "CIBIL score", min_value=300, max_value=900, value=600, step=1
         )
 
     with loan_column:
@@ -117,6 +123,40 @@ with st.form("loan_application_form"):
         loan_term = st.number_input(
             "Loan term", min_value=1, max_value=40, value=10, step=1
         )
+        cibil_score = st.number_input(
+            "CIBIL score", min_value=300, max_value=900, value=600, step=1
+        )
+
+    with assets_column:
+        st.subheader("Assets")
+        residential_assets_value = st.number_input(
+            "Residential assets value",
+            min_value=0,
+            max_value=100_000_000,
+            value=5_000_000,
+            step=100_000,
+        )
+        commercial_assets_value = st.number_input(
+            "Commercial assets value",
+            min_value=0,
+            max_value=100_000_000,
+            value=3_000_000,
+            step=100_000,
+        )
+        luxury_assets_value = st.number_input(
+            "Luxury assets value",
+            min_value=0,
+            max_value=100_000_000,
+            value=10_000_000,
+            step=100_000,
+        )
+        bank_asset_value = st.number_input(
+            "Bank asset value",
+            min_value=0,
+            max_value=100_000_000,
+            value=4_000_000,
+            step=100_000,
+        )
 
     submitted = st.form_submit_button(
         "Predict loan status", type="primary", width="stretch"
@@ -124,10 +164,17 @@ with st.form("loan_application_form"):
 
 if submitted:
     application = build_application_data({
+        "no_of_dependents": no_of_dependents,
+        "education": education,
+        "self_employed": self_employed,
         "income_annum": income_annum,
         "loan_amount": loan_amount,
         "loan_term": loan_term,
         "cibil_score": cibil_score,
+        "residential_assets_value": residential_assets_value,
+        "commercial_assets_value": commercial_assets_value,
+        "luxury_assets_value": luxury_assets_value,
+        "bank_asset_value": bank_asset_value,
     })
     try:
         predictions = predict_application(application)
@@ -178,6 +225,6 @@ else:
 if COMPARISON_CHART_PATH.is_file():
     st.image(
         str(COMPARISON_CHART_PATH),
-        caption="Decision Tree and Random Forest test-set performance",
+        caption="Logistic Regression and Random Forest test-set performance",
         width="stretch",
     )

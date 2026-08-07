@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
 from streamlit.testing.v1 import AppTest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -99,11 +99,11 @@ class EvaluationTests(unittest.TestCase):
 
     def test_grid_search_uses_stratified_five_fold_f1(self):
         pipeline = create_model_pipeline(
-            DecisionTreeClassifier(random_state=42), scale_numeric=False
+            LogisticRegression(random_state=42, max_iter=2_000), scale_numeric=True
         )
         search = create_grid_search(
             pipeline,
-            {"classifier__max_depth": [4, 6]},
+            {"classifier__C": [0.1, 1.0]},
         )
         self.assertEqual(search.refit, "f1")
         self.assertEqual(search.cv.n_splits, 5)
@@ -118,7 +118,7 @@ class EvaluationTests(unittest.TestCase):
         X = cleaned.loc[:, FEATURE_COLUMNS]
         y = cleaned["loan_status"]
         for classifier, scale in (
-            (DecisionTreeClassifier(max_depth=3, random_state=42), False),
+            (LogisticRegression(max_iter=2_000, random_state=42), True),
             (RandomForestClassifier(n_estimators=10, random_state=42), False),
         ):
             with self.subTest(classifier=type(classifier).__name__):
